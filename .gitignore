@@ -2,3 +2,4 @@
 nachos-java/nachos/proj*
 *.iml
 *.o
+out
