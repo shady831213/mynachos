@@ -1,0 +1,4 @@
+**/.idea
+nachos-java/nachos/proj*
+*.iml
+*.o
