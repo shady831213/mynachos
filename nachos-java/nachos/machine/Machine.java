@@ -12,10 +12,44 @@ import java.io.File;
  * constructs all simulated hardware devices, and starts the grader.
  */
 public final class Machine {
+
+    public static void reset() {
+        Lib.reset();
+        Config.reset();
+        TCB.reset();
+        Kernel.reset();
+        Machine.args = null;
+        processClassName = null;
+
+        securityManager = null;
+        privilege = null;
+
+        Stats stats = new Stats();
+
+        numPhysPages = -1;
+        randomSeed = 0;
+
+        baseDirectory = null;
+        nachosDirectory = null;
+        testDirectory = null;
+        configFileName = "nachos.conf";
+
+        interrupt = null;
+        Timer timer = null;
+        ElevatorBank bank = null;
+        Processor processor = null;
+        SerialConsole console = null;
+        FileSystem stubFileSystem = null;
+        NetworkLink networkLink = null;
+        autoGrader = null;
+
+        autoGraderClassName = "nachos.ag.AutoGrader";
+    }
+
     /**
      * Nachos main entry point.
      *
-     * @param    args    the command line arguments.
+     * @param args the command line arguments.
      */
     public static void main(final String[] args) {
         System.out.print("nachos 5.0j initializing...");
@@ -82,7 +116,7 @@ public final class Machine {
     /**
      * Terminate Nachos as the result of an unhandled exception or error.
      *
-     * @param    e    the exception or error.
+     * @param e the exception or error.
      */
     public static void terminate(Throwable e) {
         if (e instanceof ThreadDeath)
@@ -396,10 +430,10 @@ public final class Machine {
      * <tt>nachos.network.NetProcess</tt>.
      *
      * @return the name of the process class that the kernel should use.
-     * @see    nachos.userprog.UserKernel#run
-     * @see    nachos.userprog.UserProcess
-     * @see    nachos.vm.VMProcess
-     * @see    nachos.network.NetProcess
+     * @see nachos.userprog.UserKernel#run
+     * @see nachos.userprog.UserProcess
+     * @see nachos.vm.VMProcess
+     * @see nachos.network.NetProcess
      */
     public static String getProcessClassName() {
         if (processClassName == null)

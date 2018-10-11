@@ -23,6 +23,14 @@ import java.security.PrivilegedAction;
  * It's against the rules, <i>and</i> it can easily deadlock nachos.
  */
 public final class TCB {
+    public static void reset() {
+        currentTCB = null;
+        runningThreads = new Vector<TCB>();
+
+        privilege = null;
+        toBeDestroyed = null;
+    }
+
     /**
      * Allocate a new TCB.
      */
@@ -235,9 +243,11 @@ public final class TCB {
 
         try {
             target.run();
-
+//            System.out.println(target.toString());
             // no way out of here without going throw one of the catch blocks
-            Lib.assertNotReached();
+            if (!isFirstTCB) {
+                Lib.assertNotReached();
+            }
         } catch (ThreadDeath e) {
             // make sure this TCB is being destroyed properly
             if (!done) {
@@ -256,7 +266,9 @@ public final class TCB {
             if (runningThreads.isEmpty())
                 privilege.exit(1);
             else
-                die();
+//                die();
+                //exit with exception
+                privilege.exit(2);
         }
     }
 

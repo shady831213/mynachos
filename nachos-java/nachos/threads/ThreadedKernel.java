@@ -6,6 +6,26 @@ import nachos.machine.*;
  * A multi-threaded OS kernel.
  */
 public class ThreadedKernel extends Kernel {
+    public static void reset() {
+        scheduler = null;
+        /**
+         * Globally accessible reference to the alarm.
+         */
+        alarm = null;
+        /**
+         * Globally accessible reference to the file system.
+         */
+        fileSystem = null;
+
+        // dummy variables to make javac smarter
+        dummy1 = null;
+        dummy2 = null;
+        dummy3 = null;
+        dummy4 = null;
+        dummy5 = null;
+        dummy6 = null;
+        dummy7 = null;
+    }
     /**
      * Allocate a new multi-threaded kernel.
      */

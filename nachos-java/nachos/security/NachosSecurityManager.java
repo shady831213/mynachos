@@ -21,12 +21,13 @@ public class NachosSecurityManager extends SecurityManager {
     /**
      * Allocate a new Nachos security manager.
      *
-     * @param    testDirectory    the directory usable by the stub file system.
+     * @param testDirectory the directory usable by the stub file system.
      */
     public NachosSecurityManager(File testDirectory) {
         this.testDirectory = testDirectory;
 
         fullySecure = Config.getBoolean("NachosSecurityManager.fullySecure");
+        noExit = Config.getBoolean("NachosSecurityManager.noExit", false);
     }
 
     /**
@@ -110,7 +111,14 @@ public class NachosSecurityManager extends SecurityManager {
 
     private void exit(int exitStatus) {
         forcePrivilege();
-        System.exit(exitStatus);
+        System.setSecurityManager(null);
+        if (!noExit) {
+            System.exit(exitStatus);
+        } else {
+            if (exitStatus != 0) {
+                throw new Error("exitStatus" + exitStatus);
+            }
+        }
     }
 
     private boolean isPrivileged() {
@@ -170,7 +178,7 @@ public class NachosSecurityManager extends SecurityManager {
      * Check the specified permission. Some operations are permissible while
      * not grading. These operations are regulated here.
      *
-     * @param    perm    the permission to check.
+     * @param perm the permission to check.
      */
     public void checkPermission(Permission perm) {
         String name = perm.getName();
@@ -295,7 +303,7 @@ public class NachosSecurityManager extends SecurityManager {
      * Verify that the caller is privileged, so as to check the specified
      * permission.
      *
-     * @param    perm    the permission being checked.
+     * @param perm the permission being checked.
      */
     public void verifyPrivilege(Permission perm) {
         if (!isPrivileged())
@@ -304,6 +312,7 @@ public class NachosSecurityManager extends SecurityManager {
 
     private File testDirectory;
     private boolean fullySecure;
+    private boolean noExit;
 
     private Thread privileged = null;
     private int privilegeCount = 0;
