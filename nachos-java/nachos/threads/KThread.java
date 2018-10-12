@@ -2,6 +2,10 @@ package nachos.threads;
 
 import nachos.machine.*;
 
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Vector;
+
 /**
  * A KThread is a thread that can be used to execute Nachos kernel code. Nachos
  * allows multiple threads to run concurrently.
@@ -61,7 +65,7 @@ public class KThread {
     /**
      * Allocate a new KThread.
      *
-     * @param    target    the object whose <tt>run</tt> method is called.
+     * @param target the object whose <tt>run</tt> method is called.
      */
     public KThread(Runnable target) {
         this();
@@ -71,7 +75,7 @@ public class KThread {
     /**
      * Set the target of this thread.
      *
-     * @param    target    the object whose <tt>run</tt> method is called.
+     * @param target the object whose <tt>run</tt> method is called.
      * @return this thread.
      */
     public KThread setTarget(Runnable target) {
@@ -85,7 +89,7 @@ public class KThread {
      * Set the name of this thread. This name is used for debugging purposes
      * only.
      *
-     * @param    name    the name to give to this thread.
+     * @param name the name to give to this thread.
      * @return this thread.
      */
     public KThread setName(String name) {
@@ -275,6 +279,7 @@ public class KThread {
      */
     private final Lock finishMonLock = new Lock();
     private final Condition finishMonCon = new Condition(finishMonLock);
+
     public void join() {
         Lib.debug(dbgThread, "Joining to thread: " + toString());
 
@@ -340,9 +345,9 @@ public class KThread {
      * changed from running to blocked or ready (depending on whether the
      * thread is sleeping or yielding).
      *
-     * @param    finishing    <tt>true</tt> if the current thread is
-     * finished, and should be destroyed by the new
-     * thread.
+     * @param finishing <tt>true</tt> if the current thread is
+     *                  finished, and should be destroyed by the new
+     *                  thread.
      */
     private void run() {
         Lib.assertTrue(Machine.interrupt().disabled());
@@ -395,17 +400,62 @@ public class KThread {
     private static class PingTest implements Runnable {
         PingTest(int which) {
             this.which = which;
+            this.cnt = 0;
         }
 
         public void run() {
             for (int i = 0; i < 5; i++) {
                 System.out.println("*** thread " + which + " looped "
                         + i + " times");
+                cnt++;
                 currentThread.yield();
             }
         }
 
         private int which;
+        public int cnt;
+    }
+
+    /**
+     * Test Suite
+     */
+    private static class Test implements Runnable {
+        private String testName;
+        private Runnable testCase;
+
+        Test(String testName, Runnable testCase) {
+            this.testName = testName;
+            this.testCase = testCase;
+        }
+
+        public void run() {
+            System.out.println("Test: " + testName + " begin...");
+            try {
+                this.testCase.run();
+            } catch (Throwable e) {
+                System.out.println("Test: " + testName + " Failed!");
+                Machine.terminate(e);
+            }
+            System.out.println("Test: " + testName + " Pass!");
+        }
+    }
+
+    private static class TestSuite implements Runnable {
+        private LinkedList<Test> tests = new LinkedList<Test>();
+
+        TestSuite() {
+        }
+
+        public void addTest(Test test) {
+            this.tests.add(test);
+        }
+
+        public void run() {
+            for (Iterator i = tests.iterator(); i.hasNext(); ) {
+                ((Test) i.next()).run();
+            }
+            System.out.println("all tests pass!");
+        }
     }
 
     /**
@@ -413,12 +463,23 @@ public class KThread {
      */
     public static void selfTest() {
         Lib.debug(dbgThread, "Enter KThread.selfTest");
+        TestSuite ts = new TestSuite();
+        //join test
+        ts.addTest(new Test("join_test", new Runnable() {
+            @Override
+            public void run() {
+                PingTest j1 = new PingTest(1);
+                KThread testThread1 = new KThread(j1);
+                testThread1.setName("forked thread").fork();
+                new PingTest(0).run();
+                testThread1.join();
+                Lib.assertTrue(j1.cnt == 5);
+                new PingTest(2).run();
+            }
+        }));
 
-        KThread testThread1 = new KThread(new PingTest(1));
-        testThread1.setName("forked thread").fork();
-        new PingTest(0).run();
-        testThread1.join();
-        new PingTest(2).run();
+        //fire!
+        ts.run();
     }
 
     private static final char dbgThread = 't';
@@ -426,7 +487,7 @@ public class KThread {
     /**
      * Additional state used by schedulers.
      *
-     * @see    nachos.threads.PriorityScheduler.ThreadState
+     * @see nachos.threads.PriorityScheduler.ThreadState
      */
     public Object schedulingState = null;
 
