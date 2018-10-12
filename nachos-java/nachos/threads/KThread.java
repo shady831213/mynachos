@@ -278,7 +278,7 @@ public class KThread {
      * thread.
      */
     private final Lock finishMonLock = new Lock();
-    private final Condition finishMonCon = new Condition(finishMonLock);
+    private final Condition2 finishMonCon = new Condition2(finishMonLock);
 
     public void join() {
         Lib.debug(dbgThread, "Joining to thread: " + toString());
