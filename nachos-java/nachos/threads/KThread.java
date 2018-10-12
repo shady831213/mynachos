@@ -434,7 +434,11 @@ public class KThread {
                 this.testCase.run();
             } catch (Throwable e) {
                 System.out.println("Test: " + testName + " Failed!");
-                Machine.terminate(e);
+                if (Lib.test(dbgTest)) {
+                    Machine.terminate(e);
+                } else {
+                    Machine.terminate();
+                }
             }
             System.out.println("Test: " + testName + " Pass!");
         }
