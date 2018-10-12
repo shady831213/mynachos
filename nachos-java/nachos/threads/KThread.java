@@ -405,7 +405,7 @@ public class KThread {
 
         public void run() {
             for (int i = 0; i < 5; i++) {
-                System.out.println("*** thread " + which + " looped "
+                Lib.debug(dbgTest, "*** thread " + which + " looped "
                         + i + " times");
                 cnt++;
                 currentThread.yield();
@@ -483,6 +483,7 @@ public class KThread {
     }
 
     private static final char dbgThread = 't';
+    private static final char dbgTest = 'T';
 
     /**
      * Additional state used by schedulers.
