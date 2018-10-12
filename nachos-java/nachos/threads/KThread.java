@@ -508,7 +508,7 @@ public class KThread {
                     }
 
                     private void check() {
-                        Lib.assertTrue(this.endTime >= this.startTime + this.waitTime && this.endTime <= this.startTime + this.waitTime + Stats.KernelTick);
+                        Lib.assertTrue(this.endTime >= this.startTime + this.waitTime && this.endTime <= this.startTime + this.waitTime + Stats.TimerTicks);
                     }
                 }
                 waitUtilJob j1 = new waitUtilJob("j1", 2000);
