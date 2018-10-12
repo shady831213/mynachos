@@ -43,8 +43,8 @@ public final class Interrupt {
     /**
      * Allocate a new interrupt controller.
      *
-     * @param    privilege encapsulates privileged access to the Nachos
-     * machine.
+     * @param privilege encapsulates privileged access to the Nachos
+     *                  machine.
      */
     public Interrupt(Privilege privilege) {
         System.out.print(" interrupt");
@@ -68,7 +68,7 @@ public final class Interrupt {
      * Disable interrupts and return the old interrupt state. This method has
      * the same effect as <tt>setStatus(false)</tt>.
      *
-     * @return    <tt>true</tt> if interrupts were enabled.
+     * @return <tt>true</tt> if interrupts were enabled.
      */
     public boolean disable() {
         return setStatus(false);
@@ -78,7 +78,7 @@ public final class Interrupt {
      * Restore interrupts to the specified status. This method has the same
      * effect as <tt>setStatus(<i>status</i>)</tt>.
      *
-     * @param    status    <tt>true</tt> to enable interrupts.
+     * @param status <tt>true</tt> to enable interrupts.
      */
     public void restore(boolean status) {
         setStatus(status);
@@ -89,8 +89,8 @@ public final class Interrupt {
      * (<tt>false</tt>) and return the previous status. If the interrupt
      * status changes from disabled to enabled, the simulated time is advanced.
      *
-     * @param    status        <tt>true</tt> to enable interrupts.
-     * @return            <tt>true</tt> if interrupts were enabled.
+     * @param status <tt>true</tt> to enable interrupts.
+     * @return <tt>true</tt> if interrupts were enabled.
      */
     public boolean setStatus(boolean status) {
         boolean oldStatus = enabled;
@@ -105,7 +105,7 @@ public final class Interrupt {
     /**
      * Tests whether interrupts are enabled.
      *
-     * @return    <tt>true</tt> if interrupts are enabled.
+     * @return <tt>true</tt> if interrupts are enabled.
      */
     public boolean enabled() {
         return enabled;

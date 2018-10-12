@@ -482,6 +482,49 @@ public class KThread {
             }
         }));
 
+        //waitutil test
+        ts.addTest(new Test("waituntil_test", new Runnable() {
+            @Override
+            public void run() {
+                class waitUtilJob implements Runnable {
+                    private long waitTime;
+                    private String jobName;
+                    private long endTime;
+                    private long startTime;
+
+                    waitUtilJob(String jobName, long waitTime) {
+                        this.jobName = jobName;
+                        this.waitTime = waitTime;
+                    }
+
+                    @Override
+                    public void run() {
+                        this.startTime = Machine.timer().getTime();
+                        Lib.debug(dbgTest, jobName + " time before waitutil : " + this.startTime);
+                        ThreadedKernel.alarm.waitUntil(waitTime);
+                        this.endTime = Machine.timer().getTime();
+                        Lib.debug(dbgTest, jobName + " time after waitutil : " + this.endTime);
+                        check();
+                    }
+
+                    private void check() {
+                        Lib.assertTrue(this.endTime >= this.startTime + this.waitTime && this.endTime <= this.startTime + this.waitTime + Stats.KernelTick);
+                    }
+                }
+                waitUtilJob j1 = new waitUtilJob("j1", 2000);
+                waitUtilJob j2 = new waitUtilJob("j2", 1000);
+                waitUtilJob j3 = new waitUtilJob("j3", 1500);
+                KThread t1 = new KThread(j1);
+                KThread t2 = new KThread(j2);
+                KThread t3 = new KThread(j3);
+                t1.fork();
+                t2.fork();
+                t3.fork();
+                t1.join();
+                t2.join();
+                t3.join();
+            }
+        }));
         //fire!
         ts.run();
     }
