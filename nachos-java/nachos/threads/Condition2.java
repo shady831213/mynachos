@@ -72,5 +72,5 @@ public class Condition2 {
 
     private Lock conditionLock;
     private ThreadQueue waitQueue =
-            ThreadedKernel.scheduler.newThreadQueue(true);
+            ThreadedKernel.scheduler.newThreadQueue(false);
 }
