@@ -311,7 +311,7 @@ public class PriorityScheduler extends Scheduler {
          */
         protected int priority;
 
-        private int donatedPriority;
+        private int donatedPriority = priorityMinimum;
 
         private PriorityQueue currentWaitQueue = null;
 
