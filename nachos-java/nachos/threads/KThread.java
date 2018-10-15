@@ -688,15 +688,25 @@ public class KThread {
                 KThread[] threads = new KThread[3];
                 boolean intStatus = Machine.interrupt().disable();
 
-                KThread donateT = new KThread(new Runnable() {
+                KThread donateT1 = new KThread(new Runnable() {
                     @Override
                     public void run() {
-                        Lib.debug(dbgTest, "Run t_donate");
+                        Lib.debug(dbgTest, "Run t_donate1");
                     }
                 });
-                donateT.setName("t_donate");
-                ThreadedKernel.scheduler.setPriority(donateT, 4);
-                donateQueue.waitForAccess(donateT);
+                donateT1.setName("t_donate1");
+                ThreadedKernel.scheduler.setPriority(donateT1, 4);
+                donateQueue.waitForAccess(donateT1);
+
+                KThread donateT2 = new KThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Lib.debug(dbgTest, "Run t_donate2");
+                    }
+                });
+                donateT2.setName("t_donate2");
+                ThreadedKernel.scheduler.setPriority(donateT2, 0);
+                donateQueue.acquire(donateT2);
 
                 for (int i = 0; i < threads.length; i++) {
                     final int _i = i;
@@ -710,14 +720,53 @@ public class KThread {
                     ThreadedKernel.scheduler.setPriority(threads[_i], (_i + 1));
                     testQueue.waitForAccess(threads[_i]);
                 }
-                donateQueue.acquire(threads[0]);
-                ThreadedKernel.scheduler.setPriority(threads[0], 0);
+                //donated thread donateT2 should be donated by donateT1
+                testQueue.waitForAccess(donateT2);
+
                 KThread t1 = testQueue.nextThread();
                 Lib.debug(dbgTest, "get Thread " + t1.name);
-                Lib.assertTrue(t1.name.equals("t1"));
+                Lib.assertTrue(t1.name.equals("t_donate2"));
                 Lib.debug(dbgTest, t1.name + " priority = " + ThreadedKernel.scheduler.getPriority(t1) + " effective_priority = " + ThreadedKernel.scheduler.getEffectivePriority(t1));
                 Lib.assertTrue(ThreadedKernel.scheduler.getPriority(t1) == 0);
                 Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t1) == 4);
+
+                //modify donateT1 priority should affect donateT2
+                testQueue.waitForAccess(donateT2);
+                ThreadedKernel.scheduler.setPriority(donateT1, 5);
+                t1 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t1.name);
+                Lib.assertTrue(t1.name.equals("t_donate2"));
+                Lib.debug(dbgTest, t1.name + " priority = " + ThreadedKernel.scheduler.getPriority(t1) + " effective_priority = " + ThreadedKernel.scheduler.getEffectivePriority(t1));
+                Lib.assertTrue(ThreadedKernel.scheduler.getPriority(t1) == 0);
+                Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t1) == 5);
+
+                //insert donateT3 priority should affect donateT2
+                testQueue.waitForAccess(donateT2);
+                KThread donateT3 = new KThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Lib.debug(dbgTest, "Run t_donate3");
+                    }
+                });
+                donateT3.setName("t_donate3");
+                ThreadedKernel.scheduler.setPriority(donateT3, 6);
+                donateQueue.waitForAccess(donateT3);
+                t1 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t1.name);
+                Lib.assertTrue(t1.name.equals("t_donate2"));
+                Lib.debug(dbgTest, t1.name + " priority = " + ThreadedKernel.scheduler.getPriority(t1) + " effective_priority = " + ThreadedKernel.scheduler.getEffectivePriority(t1));
+                Lib.assertTrue(ThreadedKernel.scheduler.getPriority(t1) == 0);
+                Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t1) == 6);
+
+                //donated thread donateT3 should be donated by donateT1
+                testQueue.waitForAccess(donateQueue.nextThread());
+                ThreadedKernel.scheduler.setPriority(donateT1, 7);
+                t1 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t1.name);
+                Lib.assertTrue(t1.name.equals("t_donate3"));
+                Lib.debug(dbgTest, t1.name + " priority = " + ThreadedKernel.scheduler.getPriority(t1) + " effective_priority = " + ThreadedKernel.scheduler.getEffectivePriority(t1));
+                Lib.assertTrue(ThreadedKernel.scheduler.getPriority(t1) == 6);
+                Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t1) == 7);
 
                 KThread t2 = testQueue.nextThread();
                 Lib.debug(dbgTest, "get Thread " + t2.name);
@@ -734,6 +783,12 @@ public class KThread {
                 Lib.assertTrue(ThreadedKernel.scheduler.getPriority(t3) == 2);
                 Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t3) == 2);
 
+                KThread t4 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t4.name);
+                Lib.assertTrue(t4.name.equals("t1"));
+                Lib.debug(dbgTest, t4.name + " priority = " + ThreadedKernel.scheduler.getPriority(t4) + " effective_priority = " + ThreadedKernel.scheduler.getEffectivePriority(t4));
+                Lib.assertTrue(ThreadedKernel.scheduler.getPriority(t4) == 1);
+                Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t4) == 1);
 
                 Machine.interrupt().restore(intStatus);
             }

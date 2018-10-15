@@ -55,7 +55,7 @@ public class PriorityScheduler extends Scheduler {
     public int getEffectivePriority(KThread thread) {
         Lib.assertTrue(Machine.interrupt().disabled());
 
-        return getThreadState(thread).getDonatedPriority();
+        return getThreadState(thread).getEffectivePriority();
     }
 
     public void setPriority(KThread thread, int priority) {
@@ -138,16 +138,19 @@ public class PriorityScheduler extends Scheduler {
 
         public void acquire(KThread thread) {
             Lib.assertTrue(Machine.interrupt().disabled());
-            getThreadState(thread).acquire(this);
+            if (transferPriority) {
+                donateThread = thread;
+            }
+            if (thread != null) {
+                getThreadState(thread).acquire(this);
+            }
         }
 
         public KThread nextThread() {
             Lib.assertTrue(Machine.interrupt().disabled());
             // implement me
             KThread nextT = waitQueue.poll();
-            if (nextT != null) {
-                getThreadState(nextT).acquire(this);
-            }
+            acquire(nextT);
             return nextT;
         }
 
@@ -183,6 +186,17 @@ public class PriorityScheduler extends Scheduler {
             waitQueue.remove(thread);
         }
 
+        private void donate() {
+            if (transferPriority && donateThread != null) {
+                ThreadState nextTs = pickNextThread();
+                if (nextTs != null) {
+                    getThreadState(donateThread).setDonatedPriority(nextTs.getEffectivePriority());
+                } else {
+                    getThreadState(donateThread).setDonatedPriority(priorityMinimum);
+                }
+            }
+        }
+
         /**
          * <tt>true</tt> if this queue should transfer priority from waiting
          * threads to the owning thread.
@@ -196,18 +210,20 @@ public class PriorityScheduler extends Scheduler {
 
             @Override
             public int compare(KThread t1, KThread t2) {
-                if (getThreadState(t1).getDonatedPriority() == getThreadState(t2).getDonatedPriority()) {
+                if (getThreadState(t1).getEffectivePriority() == getThreadState(t2).getEffectivePriority()) {
                     if (getThreadState(t1).getTimestamp() < getThreadState(t2).getTimestamp()) {
                         return -1;
                     } else {
                         return 1;
                     }
                 }
-                return getThreadState(t2).getDonatedPriority() - getThreadState(t1).getDonatedPriority();
+                return getThreadState(t2).getEffectivePriority() - getThreadState(t1).getEffectivePriority();
             }
         };
 
         private java.util.PriorityQueue<KThread> waitQueue = new java.util.PriorityQueue<>(priorityMaximum + 1, priorityComparator);
+
+        private KThread donateThread = null;
     }
 
     /**
@@ -246,7 +262,7 @@ public class PriorityScheduler extends Scheduler {
          *
          * @return the effective priority of the associated thread.
          */
-        public int getDonatedPriority() {
+        public int getEffectivePriority() {
             // implement me
             return max(priority, donatedPriority);
         }
@@ -267,6 +283,21 @@ public class PriorityScheduler extends Scheduler {
             if (currentWaitQueue != null) {
                 currentWaitQueue.removeThread(thread);
                 currentWaitQueue.addThread(thread);
+                currentWaitQueue.donate();
+            }
+        }
+
+        public void setDonatedPriority(int priority) {
+            if (this.donatedPriority == priority)
+                return;
+
+            this.donatedPriority = priority;
+
+            // implement me
+            if (currentWaitQueue != null) {
+                currentWaitQueue.removeThread(thread);
+                currentWaitQueue.addThread(thread);
+                currentWaitQueue.donate();
             }
         }
 
@@ -276,6 +307,7 @@ public class PriorityScheduler extends Scheduler {
          * The associated thread is therefore waiting for access to the
          * resource guarded by <tt>waitQueue</tt>. This method is only called
          * if the associated thread cannot immediately obtain access.
+         * update donatedThread of waitQueue when insert new thread.
          *
          * @param waitQueue the queue that the associated thread is
          *                  now waiting on.
@@ -285,6 +317,7 @@ public class PriorityScheduler extends Scheduler {
             // implement me
             this.timestamp = Machine.timer().getTime();
             waitQueue.addThread(thread);
+            waitQueue.donate();
             currentWaitQueue = waitQueue;
         }
 
@@ -301,12 +334,8 @@ public class PriorityScheduler extends Scheduler {
          */
         public void acquire(PriorityQueue waitQueue) {
             // implement me
-            if (waitQueue.transferPriority) {
-                ThreadState nextTs = waitQueue.pickNextThread();
-                if (nextTs != null) {
-                    donatedPriority = nextTs.getDonatedPriority();
-                }
-            }
+            currentWaitQueue = null;
+            waitQueue.donate();
         }
 
         /**
