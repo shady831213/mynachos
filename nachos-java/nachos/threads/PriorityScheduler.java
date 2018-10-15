@@ -277,28 +277,31 @@ public class PriorityScheduler extends Scheduler {
             if (this.priority == priority)
                 return;
 
+            int oldEffectivePriority = getEffectivePriority();
             this.priority = priority;
 
             // implement me
-            if (currentWaitQueue != null) {
-                currentWaitQueue.removeThread(thread);
-                currentWaitQueue.addThread(thread);
-                currentWaitQueue.donate();
+            if (currentWaitQueue != null && oldEffectivePriority != getEffectivePriority()) {
+                fixCurrentWaitQueue();
             }
         }
 
         public void setDonatedPriority(int priority) {
             if (this.donatedPriority == priority)
                 return;
-
+            int oldEffectivePriority = getEffectivePriority();
             this.donatedPriority = priority;
 
             // implement me
-            if (currentWaitQueue != null) {
-                currentWaitQueue.removeThread(thread);
-                currentWaitQueue.addThread(thread);
-                currentWaitQueue.donate();
+            if (currentWaitQueue != null && oldEffectivePriority != getEffectivePriority()) {
+                fixCurrentWaitQueue();
             }
+        }
+
+        private void fixCurrentWaitQueue() {
+            currentWaitQueue.removeThread(thread);
+            currentWaitQueue.addThread(thread);
+            currentWaitQueue.donate();
         }
 
         /**
