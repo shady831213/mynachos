@@ -55,7 +55,7 @@ public class PriorityScheduler extends Scheduler {
     public int getEffectivePriority(KThread thread) {
         Lib.assertTrue(Machine.interrupt().disabled());
 
-        return getThreadState(thread).getEffectivePriority();
+        return getThreadState(thread).getDonatedPriority();
     }
 
     public void setPriority(KThread thread, int priority) {
@@ -193,14 +193,14 @@ public class PriorityScheduler extends Scheduler {
 
             @Override
             public int compare(KThread t1, KThread t2) {
-                if (getThreadState(t1).getEffectivePriority() == getThreadState(t2).getEffectivePriority()) {
+                if (getThreadState(t1).getDonatedPriority() == getThreadState(t2).getDonatedPriority()) {
                     if (getThreadState(t1).getTimestamp() < getThreadState(t2).getTimestamp()) {
                         return 1;
                     } else {
                         return -1;
                     }
                 }
-                return getThreadState(t2).getEffectivePriority() - getThreadState(t1).getEffectivePriority();
+                return getThreadState(t2).getDonatedPriority() - getThreadState(t1).getDonatedPriority();
             }
         };
 
@@ -241,9 +241,9 @@ public class PriorityScheduler extends Scheduler {
          *
          * @return the effective priority of the associated thread.
          */
-        public int getEffectivePriority() {
+        public int getDonatedPriority() {
             // implement me
-            return effectivePriority;
+            return max(priority, donatedPriority);
         }
 
         /**
@@ -258,8 +258,6 @@ public class PriorityScheduler extends Scheduler {
             this.priority = priority;
 
             // implement me
-            this.effectivePriority = priority;
-
             if (currentWaitQueue != null) {
                 currentWaitQueue.removeThread(thread);
                 currentWaitQueue.addThread(thread);
@@ -299,7 +297,7 @@ public class PriorityScheduler extends Scheduler {
             if (waitQueue.transferPriority) {
                 ThreadState nextTs = waitQueue.pickNextThread();
                 if (nextTs != null) {
-                    effectivePriority = max(nextTs.getEffectivePriority(), priority);
+                    donatedPriority = nextTs.getDonatedPriority();
                 }
             }
         }
@@ -313,7 +311,7 @@ public class PriorityScheduler extends Scheduler {
          */
         protected int priority;
 
-        protected int effectivePriority;
+        private int donatedPriority;
 
         private PriorityQueue currentWaitQueue = null;
 

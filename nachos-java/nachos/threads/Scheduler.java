@@ -102,7 +102,7 @@ public abstract class Scheduler {
 
     /**
      * Get the effective priority of the current thread. Equivalent to
-     * <tt>getEffectivePriority(KThread.currentThread())</tt>.
+     * <tt>getDonatedPriority(KThread.currentThread())</tt>.
      *
      * @return	the current thread's priority.
      */
