@@ -646,6 +646,39 @@ public class KThread {
                 Machine.interrupt().restore(intStatus);
             }
         }));
+        //thread queue priority_modify test
+        ts.addTest(new Test("PQ_priority_modify_test", new Runnable() {
+            @Override
+            public void run() {
+                ThreadQueue testQueue = ThreadedKernel.scheduler.newThreadQueue(false);
+                KThread[] threads = new KThread[3];
+                boolean intStatus = Machine.interrupt().disable();
+                for (int i = 0; i < threads.length; i++) {
+                    final int _i = i;
+                    threads[_i] = new KThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Lib.debug(dbgTest, "Run t" + (_i + 1));
+                        }
+                    });
+                    threads[_i].setName("t" + (_i + 1));
+                    ThreadedKernel.scheduler.setPriority(threads[_i], (_i + 1));
+                    testQueue.waitForAccess(threads[_i]);
+                }
+                ThreadedKernel.scheduler.setPriority(threads[0], 3);
+                ThreadedKernel.scheduler.setPriority(threads[1], 4);
+                KThread t1 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t1.name);
+                Lib.assertTrue(t1.name.equals("t2"));
+                KThread t2 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t2.name);
+                Lib.assertTrue(t2.name.equals("t1"));
+                KThread t3 = testQueue.nextThread();
+                Lib.debug(dbgTest, "get Thread " + t3.name);
+                Lib.assertTrue(t3.name.equals("t3"));
+                Machine.interrupt().restore(intStatus);
+            }
+        }));
         //fire!
         ts.run();
     }
