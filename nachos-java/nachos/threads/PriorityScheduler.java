@@ -189,6 +189,9 @@ public class PriorityScheduler extends Scheduler {
          */
         public boolean transferPriority;
 
+        /**
+         * compare priority;if priorities are equal, compare timestamp;
+         */
         Comparator<KThread> priorityComparator = new Comparator<KThread>() {
 
             @Override
@@ -238,6 +241,8 @@ public class PriorityScheduler extends Scheduler {
 
         /**
          * Return the effective priority of the associated thread.
+         * get max value of priority and donated priority.
+         * if transferPriority is false, no chance to update donatedPriority, which default value is minimum priority
          *
          * @return the effective priority of the associated thread.
          */
@@ -248,6 +253,7 @@ public class PriorityScheduler extends Scheduler {
 
         /**
          * Set the priority of the associated thread to the specified value.
+         * adjust priority-> remove from heap -> add to heap
          *
          * @param priority the new priority.
          */
@@ -288,6 +294,7 @@ public class PriorityScheduler extends Scheduler {
          * <tt>acquire(thread)</tt> being invoked on <tt>waitQueue</tt> (where
          * <tt>thread</tt> is the associated thread), or as a result of
          * <tt>nextThread()</tt> being invoked on <tt>waitQueue</tt>.
+         * update donatedPriority only if transferPriority is true. The value is max value in the waitQueue.
          *
          * @see nachos.threads.ThreadQueue#acquire
          * @see nachos.threads.ThreadQueue#nextThread
