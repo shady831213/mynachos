@@ -525,6 +525,74 @@ public class KThread {
                 t3.join();
             }
         }));
+        //communicator test
+        ts.addTest(new Test("communicator_test", new Runnable() {
+            int speakCnt, listenCnt;
+
+            @Override
+            public void run() {
+                Communicator c = new Communicator();
+                class Speaker implements Runnable {
+                    private Communicator c;
+                    private String jobName;
+                    private int word;
+
+                    Speaker(String jobName, Communicator c, int word) {
+                        this.jobName = jobName;
+                        this.c = c;
+                        this.word = word;
+                    }
+
+                    public void run() {
+                        for (int i = 0; i < 2; i++) {
+                            ThreadedKernel.alarm.waitUntil(Lib.random(100));
+                            Lib.debug(dbgTest, jobName + " begin speak " + this.word + " @ " + Machine.timer().getTime());
+                            c.speak(word);
+                            speakCnt++;
+                            Lib.debug(dbgTest, jobName + " speak done " + this.word + " @ " + Machine.timer().getTime());
+                        }
+                    }
+                }
+                class Listner implements Runnable {
+                    private Communicator c;
+                    private String jobName;
+                    private int word;
+
+                    Listner(String jobName, Communicator c) {
+                        this.jobName = jobName;
+                        this.c = c;
+                    }
+
+                    public void run() {
+                        for (int i = 0; i < 2; i++) {
+                            ThreadedKernel.alarm.waitUntil(Lib.random(100));
+                            Lib.debug(dbgTest, jobName + " begin listen " + this.word + " @ " + Machine.timer().getTime());
+                            this.word = c.listen();
+                            Lib.debug(dbgTest, jobName + " listen done " + this.word + " @ " + Machine.timer().getTime());
+                            listenCnt++;
+                        }
+                    }
+                }
+                Speaker s1 = new Speaker("s1", c, 1), s2 = new Speaker("s2", c, 2), s3 = new Speaker("s3", c, 3);
+                Listner l1 = new Listner("l1", c), l2 = new Listner("l2", c), l3 = new Listner("l3", c);
+                KThread ts1 = new KThread(s1), ts2 = new KThread(s2), ts3 = new KThread(s3), tl1 = new KThread(l1), tl2 = new KThread(l2), tl3 = new KThread(l3);
+                ts1.fork();
+                tl1.fork();
+                ts2.fork();
+                ts3.fork();
+                tl2.fork();
+                tl3.fork();
+                ts1.join();
+                tl1.join();
+                ts2.join();
+                ts3.join();
+                tl2.join();
+                tl3.join();
+                Lib.debug(dbgTest, " speakCnt " + this.speakCnt);
+                Lib.debug(dbgTest, " listenCnt " + this.listenCnt);
+                Lib.assertTrue(speakCnt == listenCnt);
+            }
+        }));
         //fire!
         ts.run();
     }
