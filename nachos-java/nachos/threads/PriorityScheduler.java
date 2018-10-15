@@ -195,9 +195,9 @@ public class PriorityScheduler extends Scheduler {
             public int compare(KThread t1, KThread t2) {
                 if (getThreadState(t1).getDonatedPriority() == getThreadState(t2).getDonatedPriority()) {
                     if (getThreadState(t1).getTimestamp() < getThreadState(t2).getTimestamp()) {
-                        return 1;
-                    } else {
                         return -1;
+                    } else {
+                        return 1;
                     }
                 }
                 return getThreadState(t2).getDonatedPriority() - getThreadState(t1).getDonatedPriority();
