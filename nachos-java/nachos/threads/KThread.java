@@ -597,6 +597,7 @@ public class KThread {
         ts.addTest(new Test("PQ_priority_test", new Runnable() {
             @Override
             public void run() {
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject("nachos.threads.PriorityScheduler");
                 ThreadQueue testQueue = ThreadedKernel.scheduler.newThreadQueue(false);
                 KThread[] threads = new KThread[3];
                 boolean intStatus = Machine.interrupt().disable();
@@ -618,12 +619,15 @@ public class KThread {
                     Lib.assertTrue(_t.name.equals("t" + (threads.length - i)));
                 }
                 Machine.interrupt().restore(intStatus);
+                String schedulerName = Config.getString("ThreadedKernel.scheduler");
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject(schedulerName);
             }
         }));
         //thread queue priority_equal test
         ts.addTest(new Test("PQ_priority_equal_test", new Runnable() {
             @Override
             public void run() {
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject("nachos.threads.PriorityScheduler");
                 ThreadQueue testQueue = ThreadedKernel.scheduler.newThreadQueue(false);
                 KThread[] threads = new KThread[3];
                 boolean intStatus = Machine.interrupt().disable();
@@ -644,12 +648,15 @@ public class KThread {
                     Lib.assertTrue(_t.name.equals("t" + (i + 1)));
                 }
                 Machine.interrupt().restore(intStatus);
+                String schedulerName = Config.getString("ThreadedKernel.scheduler");
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject(schedulerName);
             }
         }));
         //thread queue priority_modify test
         ts.addTest(new Test("PQ_priority_modify_test", new Runnable() {
             @Override
             public void run() {
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject("nachos.threads.PriorityScheduler");
                 ThreadQueue testQueue = ThreadedKernel.scheduler.newThreadQueue(false);
                 KThread[] threads = new KThread[3];
                 boolean intStatus = Machine.interrupt().disable();
@@ -677,12 +684,15 @@ public class KThread {
                 Lib.debug(dbgTest, "get Thread " + t3.name);
                 Lib.assertTrue(t3.name.equals("t3"));
                 Machine.interrupt().restore(intStatus);
+                String schedulerName = Config.getString("ThreadedKernel.scheduler");
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject(schedulerName);
             }
         }));
         //thread queue priority_donate test
         ts.addTest(new Test("PQ_priority_donate_test", new Runnable() {
             @Override
             public void run() {
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject("nachos.threads.PriorityScheduler");
                 ThreadQueue testQueue = ThreadedKernel.scheduler.newThreadQueue(false);
                 ThreadQueue donateQueue = ThreadedKernel.scheduler.newThreadQueue(true);
                 KThread[] threads = new KThread[3];
@@ -791,6 +801,8 @@ public class KThread {
                 Lib.assertTrue(ThreadedKernel.scheduler.getEffectivePriority(t4) == 1);
 
                 Machine.interrupt().restore(intStatus);
+                String schedulerName = Config.getString("ThreadedKernel.scheduler");
+                ThreadedKernel.scheduler = (Scheduler) Lib.constructObject(schedulerName);
             }
         }));
         //fire!
