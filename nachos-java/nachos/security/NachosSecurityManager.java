@@ -21,261 +21,259 @@ public class NachosSecurityManager extends SecurityManager {
     /**
      * Allocate a new Nachos security manager.
      *
-     * @param testDirectory the directory usable by the stub file system.
+     * @param	testDirectory	the directory usable by the stub file system.
      */
     public NachosSecurityManager(File testDirectory) {
-        this.testDirectory = testDirectory;
+	this.testDirectory = testDirectory;
 
-        fullySecure = Config.getBoolean("NachosSecurityManager.fullySecure");
-        noExit = Config.getBoolean("NachosSecurityManager.noExit", false);
+	fullySecure = Config.getBoolean("NachosSecurityManager.fullySecure");
     }
-
+	
     /**
      * Return a privilege object for this security manager. This security
      * manager must not be the active security manager.
      *
-     * @return a privilege object for this security manager.
+     * @return	a privilege object for this security manager.
      */
     public Privilege getPrivilege() {
-        Lib.assertTrue(this != System.getSecurityManager());
+	Lib.assertTrue(this != System.getSecurityManager());
 
-        return new PrivilegeProvider();
+	return new PrivilegeProvider();
     }
 
     /**
      * Install this security manager.
      */
     public void enable() {
-        Lib.assertTrue(this != System.getSecurityManager());
-
-        doPrivileged(new Runnable() {
-            public void run() {
-                System.setSecurityManager(NachosSecurityManager.this);
-            }
-        });
+	Lib.assertTrue(this != System.getSecurityManager());
+	
+	doPrivileged(new Runnable() {
+	    public void run() {
+		System.setSecurityManager(NachosSecurityManager.this);
+	    }
+	});
     }
 
     private class PrivilegeProvider extends Privilege {
-        public void doPrivileged(Runnable action) {
-            NachosSecurityManager.this.doPrivileged(action);
-        }
+	public void doPrivileged(Runnable action) {
+	    NachosSecurityManager.this.doPrivileged(action);
+	}
 
-        public Object doPrivileged(PrivilegedAction action) {
-            return NachosSecurityManager.this.doPrivileged(action);
-        }
+	public Object doPrivileged(PrivilegedAction action) {
+	    return NachosSecurityManager.this.doPrivileged(action);
+	}
 
-        public Object doPrivileged(PrivilegedExceptionAction action)
-                throws PrivilegedActionException {
-            return NachosSecurityManager.this.doPrivileged(action);
-        }
+	public Object doPrivileged(PrivilegedExceptionAction action)
+	    throws PrivilegedActionException {
+	    return NachosSecurityManager.this.doPrivileged(action);
+	}
 
-        public void exit(int exitStatus) {
-            invokeExitNotificationHandlers();
-            NachosSecurityManager.this.exit(exitStatus);
-        }
+	public void exit(int exitStatus) {
+	    invokeExitNotificationHandlers();
+	    NachosSecurityManager.this.exit(exitStatus);
+	}
     }
 
     private void enablePrivilege() {
-        if (privilegeCount == 0) {
-            Lib.assertTrue(privileged == null);
-            privileged = Thread.currentThread();
-            privilegeCount++;
-        } else {
-            Lib.assertTrue(privileged == Thread.currentThread());
-            privilegeCount++;
-        }
+	if (privilegeCount == 0) {
+	    Lib.assertTrue(privileged == null);
+	    privileged = Thread.currentThread();
+	    privilegeCount++;
+	}
+	else {
+	    Lib.assertTrue(privileged == Thread.currentThread());
+	    privilegeCount++;
+	}
     }
 
     private void rethrow(Throwable e) {
-        disablePrivilege();
-
-        if (e instanceof RuntimeException)
-            throw (RuntimeException) e;
-        else if (e instanceof Error)
-            throw (Error) e;
-        else
-            Lib.assertNotReached();
+	disablePrivilege();
+	
+	if (e instanceof RuntimeException)
+	    throw (RuntimeException) e;
+	else if (e instanceof Error)
+	    throw (Error) e;
+	else
+	    Lib.assertNotReached();	
     }
 
     private void disablePrivilege() {
-        Lib.assertTrue(privileged != null && privilegeCount > 0);
-        privilegeCount--;
-        if (privilegeCount == 0)
-            privileged = null;
+	Lib.assertTrue(privileged != null && privilegeCount > 0);
+	privilegeCount--;
+	if (privilegeCount == 0)
+	    privileged = null;
     }
 
     private void forcePrivilege() {
-        privileged = Thread.currentThread();
-        privilegeCount = 1;
+	privileged = Thread.currentThread();
+	privilegeCount = 1;
     }
 
     private void exit(int exitStatus) {
-        forcePrivilege();
-        System.setSecurityManager(null);
-        if (!noExit) {
-            System.exit(exitStatus);
-        } else {
-            if (exitStatus != 0) {
-                throw new Error("exitStatus" + exitStatus);
-            }
-        }
+	forcePrivilege();
+	System.exit(exitStatus);
     }
 
     private boolean isPrivileged() {
-        // the autograder does not allow non-Nachos threads to be created, so..
-        if (!TCB.isNachosThread())
-            return true;
-
-        return (privileged == Thread.currentThread());
+	// the autograder does not allow non-Nachos threads to be created, so..
+	if (!TCB.isNachosThread())
+	    return true;
+	
+	return (privileged == Thread.currentThread());
     }
 
     private void doPrivileged(final Runnable action) {
-        doPrivileged(new PrivilegedAction() {
-            public Object run() {
-                action.run();
-                return null;
-            }
-        });
+	doPrivileged(new PrivilegedAction() {
+	    public Object run() { action.run(); return null; }
+	});
     }
 
     private Object doPrivileged(PrivilegedAction action) {
-        Object result = null;
-        enablePrivilege();
-        try {
-            result = action.run();
-        } catch (Throwable e) {
-            rethrow(e);
-        }
-        disablePrivilege();
-        return result;
+	Object result = null;
+	enablePrivilege();
+	try {
+	    result = action.run();
+	}
+	catch (Throwable e) {
+	    rethrow(e);
+	}
+	disablePrivilege();
+	return result;
     }
 
     private Object doPrivileged(PrivilegedExceptionAction action)
-            throws PrivilegedActionException {
-        Object result = null;
-        enablePrivilege();
-        try {
-            result = action.run();
-        } catch (Exception e) {
-            throw new PrivilegedActionException(e);
-        } catch (Throwable e) {
-            rethrow(e);
-        }
-        disablePrivilege();
-        return result;
+	throws PrivilegedActionException {
+	Object result = null;
+	enablePrivilege();
+	try {
+	    result = action.run();
+	}
+	catch (Exception e) {
+	    throw new PrivilegedActionException(e);
+	}
+	catch (Throwable e) {
+	    rethrow(e);
+	}
+	disablePrivilege();
+	return result;
     }
-
+    
     private void no() {
-        throw new SecurityException();
+	throw new SecurityException();
     }
 
     private void no(Permission perm) {
-        System.err.println("\n\nLacked permission: " + perm);
-        throw new SecurityException();
+	System.err.println("\n\nLacked permission: " + perm);
+	throw new SecurityException();
     }
 
     /**
      * Check the specified permission. Some operations are permissible while
      * not grading. These operations are regulated here.
      *
-     * @param perm the permission to check.
+     * @param	perm	the permission to check.
      */
     public void checkPermission(Permission perm) {
-        String name = perm.getName();
+	String name = perm.getName();
+	
+	// some permissions are strictly forbidden
+	if (perm instanceof RuntimePermission) {
+	    // no creating class loaders
+	    if (name.equals("createClassLoader"))
+		no(perm);
+	}
+	
+	// allow the AWT mess when not grading
+	if (!fullySecure) {
+	    if (perm instanceof NetPermission) {
+		// might be needed to load awt stuff
+		if (name.equals("specifyStreamHandler"))
+		    return;
+	    }
 
-        // some permissions are strictly forbidden
-        if (perm instanceof RuntimePermission) {
-            // no creating class loaders
-            if (name.equals("createClassLoader"))
-                no(perm);
-        }
+	    if (perm instanceof RuntimePermission) {
+		// might need to load libawt
+		if (name.startsWith("loadLibrary.")) {
+		    String lib = name.substring("loadLibrary.".length());
+		    if (lib.equals("awt")) {
+			Lib.debug(dbgSecurity, "\tdynamically linking " + lib);
+			return;
+		    }
+		}
+	    }
 
-        // allow the AWT mess when not grading
-        if (!fullySecure) {
-            if (perm instanceof NetPermission) {
-                // might be needed to load awt stuff
-                if (name.equals("specifyStreamHandler"))
-                    return;
-            }
+	    if (perm instanceof AWTPermission) {
+		// permit AWT stuff
+		if (name.equals("accessEventQueue"))
+		    return;
+	    }
+	}
 
-            if (perm instanceof RuntimePermission) {
-                // might need to load libawt
-                if (name.startsWith("loadLibrary.")) {
-                    String lib = name.substring("loadLibrary.".length());
-                    if (lib.equals("awt")) {
-                        Lib.debug(dbgSecurity, "\tdynamically linking " + lib);
-                        return;
-                    }
-                }
-            }
+	// some are always allowed
+	if (perm instanceof PropertyPermission) {
+	    // allowed to read properties
+	    if (perm.getActions().equals("read"))
+		return;
+	}
 
-            if (perm instanceof AWTPermission) {
-                // permit AWT stuff
-                if (name.equals("accessEventQueue"))
-                    return;
-            }
-        }
+	// some require some more checking
+	if (perm instanceof FilePermission) {
+	    if (perm.getActions().equals("read")) {
+		// the test directory can only be read with privilege
+		if (isPrivileged())
+		    return;
 
-        // some are always allowed
-        if (perm instanceof PropertyPermission) {
-            // allowed to read properties
-            if (perm.getActions().equals("read"))
-                return;
-        }
+		enablePrivilege();
 
-        // some require some more checking
-        if (perm instanceof FilePermission) {
-            if (perm.getActions().equals("read")) {
-                // the test directory can only be read with privilege
-                if (isPrivileged())
-                    return;
+		// not allowed to read test directory directly w/out privilege
+		try {
+		    File f = new File(name);
+		    if (f.isFile()) {
+			File p = f.getParentFile();
+			if (p != null) {
+			    if (p.equals(testDirectory))
+				no(perm);
+			}
+		    }
+		}
+		catch (Throwable e) {
+		    rethrow(e);
+		}
 
-                enablePrivilege();
+		disablePrivilege();
+		return;
+	    }
+	    else if (perm.getActions().equals("write") ||
+		     perm.getActions().equals("delete")) {
+		// only allowed to write test diretory, and only with privilege
+		verifyPrivilege();
 
-                // not allowed to read test directory directly w/out privilege
-                try {
-                    File f = new File(name);
-                    if (f.isFile()) {
-                        File p = f.getParentFile();
-                        if (p != null) {
-                            if (p.equals(testDirectory))
-                                no(perm);
-                        }
-                    }
-                } catch (Throwable e) {
-                    rethrow(e);
-                }
+		try {
+		    File f = new File(name);
+		    if (f.isFile()) {
+			File p = f.getParentFile();
+			if (p != null && p.equals(testDirectory))
+			    return;
+		    }
+		}
+		catch (Throwable e) {
+		    no(perm);
+		}		    
+	    }
+	    else if (perm.getActions().equals("execute")) {
+		// only allowed to execute with privilege, and if there's a net
+		verifyPrivilege();
 
-                disablePrivilege();
-                return;
-            } else if (perm.getActions().equals("write") ||
-                    perm.getActions().equals("delete")) {
-                // only allowed to write test diretory, and only with privilege
-                verifyPrivilege();
+		if (Machine.networkLink() == null)
+		    no(perm);
+	    }
+	    else {
+		no(perm);
+	    }
+	}
 
-                try {
-                    File f = new File(name);
-                    if (f.isFile()) {
-                        File p = f.getParentFile();
-                        if (p != null && p.equals(testDirectory))
-                            return;
-                    }
-                } catch (Throwable e) {
-                    no(perm);
-                }
-            } else if (perm.getActions().equals("execute")) {
-                // only allowed to execute with privilege, and if there's a net
-                verifyPrivilege();
-
-                if (Machine.networkLink() == null)
-                    no(perm);
-            } else {
-                no(perm);
-            }
-        }
-
-        // default to requiring privilege
-        verifyPrivilege(perm);
+	// default to requiring privilege
+	verifyPrivilege(perm);
     }
 
     /**
@@ -283,39 +281,38 @@ public class NachosSecurityManager extends SecurityManager {
      * thread group for a child thread of the current thread. The caller must
      * be privileged in order to successfully create the thread.
      *
-     * @return a thread group for the new thread, or <tt>null</tt> to use the
-     * current	thread's thread group.
+     * @return	a thread group for the new thread, or <tt>null</tt> to use the
+     *	        current	thread's thread group.
      */
     public ThreadGroup getThreadGroup() {
-        verifyPrivilege();
-        return null;
+	verifyPrivilege();
+	return null;
     }
 
     /**
      * Verify that the caller is privileged.
      */
     public void verifyPrivilege() {
-        if (!isPrivileged())
-            no();
+	if (!isPrivileged())
+	    no();
     }
 
     /**
      * Verify that the caller is privileged, so as to check the specified
      * permission.
      *
-     * @param perm the permission being checked.
+     * @param	perm	the permission being checked.
      */
     public void verifyPrivilege(Permission perm) {
-        if (!isPrivileged())
-            no(perm);
+	if (!isPrivileged())
+	    no(perm);
     }
 
     private File testDirectory;
     private boolean fullySecure;
-    private boolean noExit;
 
     private Thread privileged = null;
     private int privilegeCount = 0;
-
+    
     private static final char dbgSecurity = 'S';
 }

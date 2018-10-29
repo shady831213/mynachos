@@ -6,29 +6,23 @@ package nachos.machine;
  * An OS kernel.
  */
 public abstract class Kernel {
-    public static void reset() {
-        kernel = null;
-    }
-
-    /**
-     * Globally accessible reference to the kernel.
-     */
+    /** Globally accessible reference to the kernel. */
     public static Kernel kernel = null;
 
     /**
      * Allocate a new kernel.
      */
     public Kernel() {
-        // make sure only one kernel is created
-        Lib.assertTrue(kernel == null);
-        kernel = this;
+	// make sure only one kernel is created
+	Lib.assertTrue(kernel == null);	
+	kernel = this;
     }
 
     /**
      * Initialize this kernel.
      */
     public abstract void initialize(String[] args);
-
+    
     /**
      * Test that this module works.
      *
@@ -37,7 +31,7 @@ public abstract class Kernel {
      * <tt>initialize()</tt>.
      */
     public abstract void selfTest();
-
+    
     /**
      * Begin executing user programs, if applicable.
      */
