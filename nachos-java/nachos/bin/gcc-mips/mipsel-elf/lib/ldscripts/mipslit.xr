@@ -1,0 +1,39 @@
+/* Script for ld -r: link without relocation */
+OUTPUT_FORMAT("ecoff-littlemips", "ecoff-bigmips",
+	      "ecoff-littlemips")
+SEARCH_DIR("/home/yli/work/java/nachos/nachos-java/nachos/bin/gcc-mips/mips-dec-ultrix42/lib");
+SECTIONS
+{
+  .text : {
+    ;
+    *(.init)
+    ;
+    *(.text)
+    *(.fini)
+    ;
+    ;
+  }
+  .rdata : {
+    *(.rdata)
+  }
+  .data : {
+    *(.data)
+  }
+  .lit8 : {
+    *(.lit8)
+  }
+  .lit4 : {
+    *(.lit4)
+  }
+  .sdata : {
+    *(.sdata)
+  }
+  .sbss : {
+    *(.sbss)
+    *(.scommon)
+  }
+  .bss : {
+    *(.bss)
+    *(COMMON)
+  }
+}

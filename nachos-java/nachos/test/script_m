@@ -1,0 +1,22 @@
+OUTPUT_FORMAT("ecoff-littlemips")
+SEARCH_DIR(.)
+ENTRY(__start)
+
+SECTIONS {
+  . = 0;
+  .text		0		: { *(.text)
+  				    *(.text.*)
+				    }
+  .rdata	BLOCK(0x400)	: { *(.rdata)
+  				    *(.reginfo)
+				    *(.MIPS.abiflags)
+				    *(.comment)
+				    *(.pdr)
+				    *(.mdebug.*)
+				    *(.gnu.*)
+				    }
+  .data		BLOCK(0x400)	: { *(.data) }
+  .sbss		BLOCK(0x400)	: { *(.sbss) }
+  .bss		BLOCK(0x400)	: { *(.bss) }
+  .scommon	BLOCK(0x400)	: { *(.scommon) }
+}

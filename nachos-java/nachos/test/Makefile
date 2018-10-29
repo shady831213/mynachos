@@ -11,17 +11,17 @@
 # you need to point to the right executables
 GCCDIR = $(ARCHDIR)/mips-
 
-ASFLAGS = -mips32r2
+ASFLAGS = -mips1
 CPPFLAGS =
-CFLAGS = -O2 -B$(ARCHDIR) -G 0 -Wa,-mips32r2 -nostdlib -ffreestanding
-LDFLAGS = -s -T script -N -warn-common -warn-constructors -warn-multiple-gp
+CFLAGS = -O2 -B$(GCCDIR) -G 0 -Wa,-mips1 -nostdlib -ffreestanding
+LDFLAGS = -s -T script -N -warn-common -warn-constructors -warn-multiple-gp -M
 
-CC =  mips-linux-gnu-gcc
-AS = mips-linux-gnu-as
-LD = mips-linux-gnu-ld
-CPP = mips-linux-gnu-cpp
-AR = mips-linux-gnu-ar
-RANLIB = mips-linux-gnu-ranlib
+CC = $(GCCDIR)gcc
+AS = $(GCCDIR)as
+LD = $(GCCDIR)ld
+CPP = $(GCCDIR)cpp
+AR = $(GCCDIR)ar
+RANLIB = $(GCCDIR)ranlib
 
 STDLIB_H = stdio.h stdlib.h ag.h
 STDLIB_C = stdio.c stdlib.c
