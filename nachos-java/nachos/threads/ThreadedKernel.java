@@ -26,6 +26,7 @@ public class ThreadedKernel extends Kernel {
         dummy6 = null;
         dummy7 = null;
     }
+
     /**
      * Allocate a new multi-threaded kernel.
      */

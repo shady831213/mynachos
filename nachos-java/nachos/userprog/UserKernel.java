@@ -49,6 +49,16 @@ public class UserKernel extends ThreadedKernel {
                 thread.join();
             }
         }));
+        //create test
+        ts.addTest(new Lib.Test("create_test", new Runnable() {
+            @Override
+            public void run() {
+                UserProcess process = UserProcess.newUserProcess();
+                UThread thread = process.execute("create.coff", new String[]{"create","create_file"});
+                thread.join();
+                Lib.assertTrue(ThreadedKernel.fileSystem.remove("create_file"));
+            }
+        }));
         //fire!
         ts.run();
 

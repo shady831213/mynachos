@@ -353,11 +353,28 @@ public class UserProcess {
     }
 
     private int handleExit() {
-        System.out.println("Exit, finish process!");
+        Lib.debug(dbgProcess, "Exit, finish process!");
         KThread.currentThread().finish();
+        unloadSections();
         return 0;
     }
 
+    private int handleCreate(int vaddr) {
+        Lib.debug(dbgProcess, "create file");
+        String filename = readVirtualMemoryString(vaddr, maxFileNameLen);
+        if (filename == null) {
+            Lib.debug(dbgProcess, "bad file name!");
+            return -1;
+        }
+        try {
+            ThreadedKernel.fileSystem.open(filename, true);
+            return 0;
+        } catch (Exception e) {
+            Lib.debug(dbgProcess, "create file " + filename + " failed!");
+            return -1;
+        }
+
+    }
 
     private static final int
             syscallHalt = 0,
@@ -405,7 +422,8 @@ public class UserProcess {
                 return handleHalt();
             case syscallExit:
                 return handleExit();
-
+            case syscallCreate:
+                return handleCreate(a0);
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
                 Lib.assertNotReached("Unknown system call!");
@@ -461,6 +479,9 @@ public class UserProcess {
      * The number of pages in the program's stack.
      */
     protected final int stackPages = 8;
+
+
+    protected final int maxFileNameLen = 256;
 
     private int initialPC, initialSP;
     private int argc, argv;
