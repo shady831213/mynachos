@@ -6,6 +6,7 @@ import nachos.userprog.*;
 
 import java.io.EOFException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Vector;
 
 /**
@@ -359,9 +360,14 @@ public class UserProcess {
 
     private int handleExit(int status) {
         Lib.debug(dbgProcess, "Exit with status " + status + ", finish process!");
-        KThread.currentThread().finish();
         unloadSections();
-        exitStatus = exitStatus;
+        //close all files
+        for (Iterator i = openFiles.iterator(); i.hasNext(); ) {
+            ((OpenFile) i.next()).close();
+        }
+        openFiles.clear();
+        exitStatus = status;
+        KThread.currentThread().finish();
         return status;
     }
 
