@@ -16,7 +16,10 @@ int main(int argc, char** argv)
     printf("Unable to create %s\n", argv[1]);
     return 1;
   }
-
+  if (file!=2) {
+    printf("file desp should be 2, but it is %0d\n", file);
+    return 1;
+  }
   //close(file);
 
   return 0;

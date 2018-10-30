@@ -5,6 +5,8 @@ import nachos.threads.*;
 import nachos.userprog.*;
 
 import java.io.EOFException;
+import java.util.HashMap;
+import java.util.Vector;
 
 /**
  * Encapsulates the state of a user process that is not contained in its
@@ -27,6 +29,9 @@ public class UserProcess {
         pageTable = new TranslationEntry[numPhysPages];
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+        //stdin(0) and stdout(1)
+        openFiles.add(UserKernel.console.openForReading());
+        openFiles.add(UserKernel.console.openForWriting());
     }
 
     /**
@@ -363,18 +368,16 @@ public class UserProcess {
     private int handleCreate(int vaddr) {
         Lib.debug(dbgProcess, "create file");
         String filename = readVirtualMemoryString(vaddr, maxFileNameLen);
-        if (filename == null) {
-            Lib.debug(dbgProcess, "bad file name!");
-            return -1;
-        }
-        try {
-            ThreadedKernel.fileSystem.open(filename, true);
-            return 0;
-        } catch (Exception e) {
+        OpenFile f = ThreadedKernel.fileSystem.open(filename, true);
+        if (f == null) {
             Lib.debug(dbgProcess, "create file " + filename + " failed!");
             return -1;
         }
-
+        if (!openFiles.contains(f)) {
+            openFiles.add(f);
+        }
+        Lib.debug(dbgProcess, "file desp of " + filename + " is " + openFiles.indexOf(f));
+        return openFiles.indexOf(f);
     }
 
     private static final int
@@ -501,4 +504,6 @@ public class UserProcess {
     }
 
     private int exitStatus = 0;
+
+    private Vector<OpenFile> openFiles = new Vector<>();
 }
