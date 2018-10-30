@@ -54,13 +54,13 @@ public class UserProcess {
      * @param args the arguments to pass to the executable.
      * @return <tt>true</tt> if the program was successfully executed.
      */
-    public boolean execute(String name, String[] args) {
+    public UThread execute(String name, String[] args) {
         if (!load(name, args))
-            return false;
+            return null;
 
-        new UThread(this).setName(name).fork();
-
-        return true;
+        UThread thread = new UThread(this);
+        thread.setName(name).fork();
+        return thread;
     }
 
     /**
@@ -352,6 +352,12 @@ public class UserProcess {
         return 0;
     }
 
+    private int handleExit() {
+        System.out.println("Exit, finish process!");
+        KThread.currentThread().finish();
+        return 0;
+    }
+
 
     private static final int
             syscallHalt = 0,
@@ -397,7 +403,8 @@ public class UserProcess {
         switch (syscall) {
             case syscallHalt:
                 return handleHalt();
-
+            case syscallExit:
+                return handleExit();
 
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);

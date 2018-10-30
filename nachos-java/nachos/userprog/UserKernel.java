@@ -37,6 +37,21 @@ public class UserKernel extends ThreadedKernel {
     public void selfTest() {
         super.selfTest();
 
+        Lib.TestSuite ts = new Lib.TestSuite();
+
+        //non root process halt test
+        ts.addTest(new Lib.Test("non_root_process_halt_test", new Runnable() {
+            @Override
+            public void run() {
+                UserProcess process = UserProcess.newUserProcess();
+                UThread thread = process.execute("halt.coff", new String[]{});
+                Lib.assertTrue(thread != null);
+                thread.join();
+            }
+        }));
+        //fire!
+        ts.run();
+
         System.out.println("Testing the console device. Typed characters");
         System.out.println("will be echoed until q is typed.");
 
@@ -47,7 +62,6 @@ public class UserKernel extends ThreadedKernel {
             console.writeByte(c);
         }
         while (c != 'q');
-
         System.out.println("");
     }
 
@@ -89,7 +103,7 @@ public class UserKernel extends ThreadedKernel {
      * program in it. The name of the shell program it must run is returned by
      * <tt>Machine.getShellProgramName()</tt>.
      *
-     * @see    nachos.machine.Machine#getShellProgramName
+     * @see nachos.machine.Machine#getShellProgramName
      */
     public void run() {
         super.run();
@@ -97,9 +111,12 @@ public class UserKernel extends ThreadedKernel {
         UserProcess process = UserProcess.newRootUserProcess();
 
         String shellProgram = Machine.getShellProgramName();
-        Lib.assertTrue(process.execute(shellProgram, new String[]{}));
+        UThread thread = process.execute(shellProgram, new String[]{});
+        Lib.assertTrue(thread != null);
 
-        KThread.currentThread().finish();
+
+        //wait for process exit! fix me
+        thread.join();
     }
 
     /**
