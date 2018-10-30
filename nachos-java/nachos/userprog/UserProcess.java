@@ -352,11 +352,12 @@ public class UserProcess {
         return 0;
     }
 
-    private int handleExit() {
-        Lib.debug(dbgProcess, "Exit, finish process!");
+    private int handleExit(int status) {
+        Lib.debug(dbgProcess, "Exit with status " + status + ", finish process!");
         KThread.currentThread().finish();
         unloadSections();
-        return 0;
+        exitStatus = exitStatus;
+        return status;
     }
 
     private int handleCreate(int vaddr) {
@@ -421,7 +422,7 @@ public class UserProcess {
             case syscallHalt:
                 return handleHalt();
             case syscallExit:
-                return handleExit();
+                return handleExit(a0);
             case syscallCreate:
                 return handleCreate(a0);
             default:
@@ -494,4 +495,10 @@ public class UserProcess {
     }
 
     private boolean root = false;
+
+    public int getExitStatus() {
+        return exitStatus;
+    }
+
+    private int exitStatus = 0;
 }
