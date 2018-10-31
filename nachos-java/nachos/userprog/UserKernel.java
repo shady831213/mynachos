@@ -90,6 +90,19 @@ public class UserKernel extends ThreadedKernel {
                 Lib.assertTrue(process.getExitStatus() == 0);
             }
         }));
+        //unlink test
+        ts.addTest(new Lib.Test("unlink_test", new Runnable() {
+            @Override
+            public void run() {
+                UserProcess process = UserProcess.newUserProcess();
+                UThread thread = process.execute("unlink_test.coff", new String[]{"unlink_test", "unlink_file"});
+                thread.join();
+                //check removed file success
+                Lib.assertTrue(!ThreadedKernel.fileSystem.remove("unlink_file"));
+                //check exit status
+                Lib.assertTrue(process.getExitStatus() == 0);
+            }
+        }));
         //fire!
         ts.run();
 

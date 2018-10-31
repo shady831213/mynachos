@@ -427,6 +427,22 @@ public class UserProcess {
         return 0;
     }
 
+    private int handleUnlik(int vaddr) {
+        Lib.debug(dbgProcess, "unlink file");
+        String filename = readVirtualMemoryString(vaddr, maxFileNameLen);
+        //cached file
+        int desp;
+        desp = cachedFileDesp(filename);
+        if (desp >= 0) {
+            openedFiles.remove(desp);
+        }
+        boolean success = ThreadedKernel.fileSystem.remove(filename);
+        if (!success) {
+            return -1;
+        }
+        return 0;
+    }
+
     private static final int
             syscallHalt = 0,
             syscallExit = 1,
@@ -479,6 +495,8 @@ public class UserProcess {
                 return handleOpen(a0);
             case syscallClose:
                 return handleClose(a0);
+            case syscallUnlink:
+                return handleUnlik(a0);
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
                 Lib.assertNotReached("Unknown system call!");
