@@ -29,8 +29,8 @@ public class UserProcess {
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         //stdin(0) and stdout(1)
-        openedFiles.add(UserKernel.console.openForReading());
-        openedFiles.add(UserKernel.console.openForWriting());
+        stdin = UserKernel.console.openForReading();
+        stdout = UserKernel.console.openForWriting();
     }
 
     /**
@@ -384,7 +384,7 @@ public class UserProcess {
         int desp;
         desp = cachedFileDesp(filename);
         if (desp >= 0) {
-            return desp;
+            return desp + fileDespStart;
         }
         OpenFile f = ThreadedKernel.fileSystem.open(filename, create);
         if (f == null) {
@@ -394,7 +394,7 @@ public class UserProcess {
         openedFiles.add(f);
         desp = openedFiles.size() - 1;
         Lib.debug(dbgProcess, "file desp of " + filename + " is " + desp);
-        return desp;
+        return desp + fileDespStart;
     }
 
     private int handleCreate(int vaddr) {
@@ -410,12 +410,20 @@ public class UserProcess {
 
     private int handleClose(int desp) {
         Lib.debug(dbgProcess, "close file");
-        if (desp >= openedFiles.size()) {
-            Lib.debug(dbgProcess, "close file failed!");
-            return -1;
+        switch (desp) {
+            case 0:
+                stdin.close();
+            case 1:
+                stdout.close();
+            default: {
+                if (desp >= openedFiles.size()) {
+                    Lib.debug(dbgProcess, "close file failed!");
+                    return -1;
+                }
+                openedFiles.get(desp).close();
+                openedFiles.remove(desp);
+            }
         }
-        openedFiles.get(desp).close();
-        openedFiles.remove(desp);
         return 0;
     }
 
@@ -548,5 +556,7 @@ public class UserProcess {
 
     private int exitStatus = 0;
 
+    protected final int fileDespStart = 2;
+    private OpenFile stdin, stdout;
     private Vector<OpenFile> openedFiles = new Vector<>();
 }
