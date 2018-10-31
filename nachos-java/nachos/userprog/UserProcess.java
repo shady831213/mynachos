@@ -408,6 +408,17 @@ public class UserProcess {
 
     }
 
+    private int handleClose(int desp) {
+        Lib.debug(dbgProcess, "close file");
+        if (desp >= openedFiles.size()) {
+            Lib.debug(dbgProcess, "close file failed!");
+            return -1;
+        }
+        openedFiles.get(desp).close();
+        openedFiles.remove(desp);
+        return 0;
+    }
+
     private static final int
             syscallHalt = 0,
             syscallExit = 1,
@@ -458,6 +469,8 @@ public class UserProcess {
                 return handleCreate(a0);
             case syscallOpen:
                 return handleOpen(a0);
+            case syscallClose:
+                return handleClose(a0);
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
                 Lib.assertNotReached("Unknown system call!");
