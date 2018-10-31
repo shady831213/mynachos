@@ -360,29 +360,28 @@ public class UserProcess {
         Lib.debug(dbgProcess, "Exit with status " + status + ", finish process!");
         unloadSections();
         //close all files
-        for (Iterator i = openedFiles.iterator(); i.hasNext(); ) {
-            ((OpenFile) i.next()).close();
-        }
         openedFiles.clear();
         exitStatus = status;
         KThread.currentThread().finish();
         return status;
     }
 
-    private int cachedFileDesp(String filename) {
-        for (int i = openedFiles.size() - 1; i >= 0; i--) {
-            if (openedFiles.get(i).getName().equals(filename)) {
-                return i;
-            }
+    private OpenFile getFileByDesp(int desp) {
+        switch (desp) {
+            case 0:
+                return stdin;
+            case 1:
+                return stdout;
+            default:
+                return openedFiles.getFileByDesp(desp - fileDespStart);
         }
-        return -1;
     }
 
     private int handleCreateOrOpen(int vaddr, boolean create) {
         String filename = readVirtualMemoryString(vaddr, maxFileNameLen);
         //cached file
         int desp;
-        desp = cachedFileDesp(filename);
+        desp = openedFiles.cachedFileDesp(filename);
         if (desp >= 0) {
             return desp + fileDespStart;
         }
@@ -391,8 +390,11 @@ public class UserProcess {
             Lib.debug(dbgProcess, "bad filename: " + filename + "!");
             return -1;
         }
-        openedFiles.add(f);
-        desp = openedFiles.size() - 1;
+        desp = openedFiles.addOpenFile(f);
+        if (desp == -1) {
+            Lib.debug(dbgProcess, "open file has been more than 16!");
+            return -1;
+        }
         Lib.debug(dbgProcess, "file desp of " + filename + " is " + desp);
         return desp + fileDespStart;
     }
@@ -410,19 +412,13 @@ public class UserProcess {
 
     private int handleClose(int desp) {
         Lib.debug(dbgProcess, "close file");
-        switch (desp) {
-            case 0:
-                stdin.close();
-            case 1:
-                stdout.close();
-            default: {
-                if (desp >= openedFiles.size()) {
-                    Lib.debug(dbgProcess, "close file failed!");
-                    return -1;
-                }
-                openedFiles.get(desp).close();
-                openedFiles.remove(desp);
-            }
+        OpenFile file = getFileByDesp(desp);
+        if (file == null) {
+            return -1;
+        }
+        file.close();
+        if (desp >= fileDespStart) {
+            openedFiles.closeFile(desp - fileDespStart);
         }
         return 0;
     }
@@ -432,15 +428,48 @@ public class UserProcess {
         String filename = readVirtualMemoryString(vaddr, maxFileNameLen);
         //cached file
         int desp;
-        desp = cachedFileDesp(filename);
+        desp = openedFiles.cachedFileDesp(filename);
         if (desp >= 0) {
-            openedFiles.remove(desp);
+            openedFiles.closeFile(desp);
         }
         boolean success = ThreadedKernel.fileSystem.remove(filename);
         if (!success) {
             return -1;
         }
         return 0;
+    }
+
+    private int handleRead(int desp, int vaddr, int count) {
+        Lib.debug(dbgProcess, "read file");
+        OpenFile file = getFileByDesp(desp);
+        if (file == null) {
+            return -1;
+        }
+        byte data[] = new byte[count];
+        int readAmount = file.read(data, 0, count);
+        if (readAmount == -1) {
+            file.seek(0);
+            return -1;
+        }
+        int amount = writeVirtualMemory(vaddr, data, 0, readAmount);
+        return amount;
+    }
+
+    private int handleWrite(int desp, int vaddr, int count) {
+        Lib.debug(dbgProcess, "write file");
+        OpenFile file = getFileByDesp(desp);
+        if (file == null) {
+            return -1;
+        }
+        byte data[] = new byte[count];
+        int amount = readVirtualMemory(vaddr, data, 0, count);
+
+        int writeAmount = file.write(data, 0, amount);
+        if (writeAmount < count) {
+            file.seek(0);
+            return -1;
+        }
+        return writeAmount;
     }
 
     private static final int
@@ -497,6 +526,10 @@ public class UserProcess {
                 return handleClose(a0);
             case syscallUnlink:
                 return handleUnlik(a0);
+            case syscallRead:
+                return handleRead(a0, a1, a2);
+            case syscallWrite:
+                return handleWrite(a0, a1, a2);
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
                 Lib.assertNotReached("Unknown system call!");
@@ -556,6 +589,8 @@ public class UserProcess {
 
     protected final int maxFileNameLen = 256;
 
+    protected final int maxFiles = 14;
+
     private int initialPC, initialSP;
     private int argc, argv;
 
@@ -576,5 +611,61 @@ public class UserProcess {
 
     protected final int fileDespStart = 2;
     private OpenFile stdin, stdout;
-    private Vector<OpenFile> openedFiles = new Vector<>();
+
+    private class openFileCache {
+        private Vector<OpenFile> cache;
+
+        openFileCache(int size) {
+            cache = new Vector<>(size);
+        }
+
+        private int cachedFileDesp(String filename) {
+            for (int i = cache.size() - 1; i >= 0; i--) {
+                if (cache.get(i) != null && cache.get(i).getName().equals(filename)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private int addOpenFile(OpenFile file) {
+            for (int i = 0; i < cache.size(); i++) {
+                if (cache.get(i) == null) {
+                    cache.set(i, file);
+                    return i;
+                }
+            }
+            if (cache.size() < maxFiles) {
+                cache.add(file);
+                return cache.size() - 1;
+            }
+            return -1;
+        }
+
+        private OpenFile getFileByDesp(int desp) {
+            OpenFile file = cache.get(desp);
+            if (file == null) {
+                Lib.debug(dbgProcess, "file desp " + desp + " is not existed!");
+            }
+            return file;
+        }
+
+        private void closeFile(int desp) {
+            if (desp < cache.size()) {
+                cache.set(desp, null);
+            }
+        }
+
+        private void clear() {
+            for (Iterator i = cache.iterator(); i.hasNext(); ) {
+                OpenFile file = ((OpenFile) i.next());
+                if (file != null) {
+                    file.close();
+                }
+            }
+            cache.clear();
+        }
+    }
+
+    private openFileCache openedFiles = new openFileCache(maxFiles);
 }

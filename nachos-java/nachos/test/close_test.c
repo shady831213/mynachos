@@ -19,8 +19,10 @@ int main(int argc, char** argv)
     printf("file desp should be 2, but it is %0d\n", file);
     return 1;
   }
-  close(file);
-
+  if (close(file)!=0) {
+    printf("close file failed\n");
+    return 1;
+  }
   //reopen
   reopen_file = open(argv[1]);
   if (reopen_file!=file) {
