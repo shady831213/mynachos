@@ -2,10 +2,8 @@ package nachos.userprog;
 
 import nachos.machine.*;
 import nachos.threads.*;
-import nachos.userprog.*;
 
 import java.io.EOFException;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Vector;
 
@@ -31,8 +29,8 @@ public class UserProcess {
         for (int i = 0; i < numPhysPages; i++)
             pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         //stdin(0) and stdout(1)
-        openFiles.add(UserKernel.console.openForReading());
-        openFiles.add(UserKernel.console.openForWriting());
+        openedFiles.add(UserKernel.console.openForReading());
+        openedFiles.add(UserKernel.console.openForWriting());
     }
 
     /**
@@ -362,28 +360,52 @@ public class UserProcess {
         Lib.debug(dbgProcess, "Exit with status " + status + ", finish process!");
         unloadSections();
         //close all files
-        for (Iterator i = openFiles.iterator(); i.hasNext(); ) {
+        for (Iterator i = openedFiles.iterator(); i.hasNext(); ) {
             ((OpenFile) i.next()).close();
         }
-        openFiles.clear();
+        openedFiles.clear();
         exitStatus = status;
         KThread.currentThread().finish();
         return status;
     }
 
-    private int handleCreate(int vaddr) {
-        Lib.debug(dbgProcess, "create file");
+    private int cachedFileDesp(String filename) {
+        for (int i = openedFiles.size() - 1; i >= 0; i--) {
+            if (openedFiles.get(i).getName().equals(filename)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int handleCreateOrOpen(int vaddr, boolean create) {
         String filename = readVirtualMemoryString(vaddr, maxFileNameLen);
-        OpenFile f = ThreadedKernel.fileSystem.open(filename, true);
+        //cached file
+        int desp;
+        desp = cachedFileDesp(filename);
+        if (desp >= 0) {
+            return desp;
+        }
+        OpenFile f = ThreadedKernel.fileSystem.open(filename, create);
         if (f == null) {
-            Lib.debug(dbgProcess, "create file " + filename + " failed!");
+            Lib.debug(dbgProcess, "bad filename: " + filename + "!");
             return -1;
         }
-        if (!openFiles.contains(f)) {
-            openFiles.add(f);
-        }
-        Lib.debug(dbgProcess, "file desp of " + filename + " is " + openFiles.indexOf(f));
-        return openFiles.indexOf(f);
+        openedFiles.add(f);
+        desp = openedFiles.size() - 1;
+        Lib.debug(dbgProcess, "file desp of " + filename + " is " + desp);
+        return desp;
+    }
+
+    private int handleCreate(int vaddr) {
+        Lib.debug(dbgProcess, "create file");
+        return handleCreateOrOpen(vaddr, true);
+    }
+
+    private int handleOpen(int vaddr) {
+        Lib.debug(dbgProcess, "open file");
+        return handleCreateOrOpen(vaddr, false);
+
     }
 
     private static final int
@@ -434,6 +456,8 @@ public class UserProcess {
                 return handleExit(a0);
             case syscallCreate:
                 return handleCreate(a0);
+            case syscallOpen:
+                return handleOpen(a0);
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
                 Lib.assertNotReached("Unknown system call!");
@@ -511,5 +535,5 @@ public class UserProcess {
 
     private int exitStatus = 0;
 
-    private Vector<OpenFile> openFiles = new Vector<>();
+    private Vector<OpenFile> openedFiles = new Vector<>();
 }

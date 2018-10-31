@@ -56,10 +56,23 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("create.coff", new String[]{"create", "create_file"});
+                UThread thread = process.execute("create_test.coff", new String[]{"create_test", "create_file"});
                 thread.join();
                 //check create file success
                 Lib.assertTrue(ThreadedKernel.fileSystem.remove("create_file"));
+                //check exit status
+                Lib.assertTrue(process.getExitStatus() == 0);
+            }
+        }));
+        //open test
+        ts.addTest(new Lib.Test("open_test", new Runnable() {
+            @Override
+            public void run() {
+                UserProcess process = UserProcess.newUserProcess();
+                UThread thread = process.execute("open_test.coff", new String[]{"open_test", "open_file"});
+                thread.join();
+                //check create file success
+                Lib.assertTrue(ThreadedKernel.fileSystem.remove("open_file"));
                 //check exit status
                 Lib.assertTrue(process.getExitStatus() == 0);
             }

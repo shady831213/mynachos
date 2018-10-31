@@ -11,7 +11,7 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  file = creat("create_file");
+  file = creat(argv[1]);
   if (file==-1) {
     printf("Unable to create %s\n", argv[1]);
     return 1;
