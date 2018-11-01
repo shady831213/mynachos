@@ -26,8 +26,8 @@ public class UserProcess {
     public UserProcess() {
         int numPhysPages = Machine.processor().getNumPhysPages();
         pageTable = new TranslationEntry[numPhysPages];
-        for (int i = 0; i < numPhysPages; i++)
-            pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+//        for (int i = 0; i < numPhysPages; i++)
+//            pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         //stdin(0) and stdout(1)
         stdin = UserKernel.console.openForReading();
         stdout = UserKernel.console.openForWriting();
@@ -147,9 +147,38 @@ public class UserProcess {
         if (vaddr < 0 || vaddr >= memory.length)
             return 0;
 
-        int amount = Math.min(length, memory.length - vaddr);
-        System.arraycopy(memory, vaddr, data, offset, amount);
+        int startVaddr = vaddr + offset;
+        int endVaddr = startVaddr + length - 1;
 
+        int amount = 0;
+        int leftLength = length;
+        int vaddrACC = startVaddr;
+
+        for (int i = startVaddr / pageSize; i <= endVaddr / pageSize; i++) {
+            int amountInPage = readVirtualMemoryInPage(vaddrACC, data, offset + amount, leftLength, memory);
+            if (amountInPage == 0) {
+                break;
+            }
+            amount += amountInPage;
+            leftLength -= amountInPage;
+            vaddrACC += amountInPage;
+        }
+
+//        int amount = Math.min(length, memory.length - vaddr);
+//        System.arraycopy(memory, vaddr, data, offset, amount);
+
+        return amount;
+    }
+
+    protected int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                          int length, byte[] memory) {
+        TranslationEntry page = translate(vaddr / pageSize);
+        if (page == null || !page.valid) {
+            return 0;
+        }
+        int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
+        int amount = Math.min(length, pageSize - (vaddr % pageSize));
+        System.arraycopy(memory, paddrInPage, data, offset, amount);
         return amount;
     }
 
@@ -190,10 +219,58 @@ public class UserProcess {
         if (vaddr < 0 || vaddr >= memory.length)
             return 0;
 
-        int amount = Math.min(length, memory.length - vaddr);
-        System.arraycopy(data, offset, memory, vaddr, amount);
+        int startVaddr = vaddr + offset;
+        int endVaddr = startVaddr + length - 1;
+
+        int amount = 0;
+        int leftLength = length;
+        int vaddrACC = startVaddr;
+
+        for (int i = startVaddr / pageSize; i <= endVaddr / pageSize; i++) {
+            int amountInPage = writeVirtualMemoryInPage(vaddrACC, data, offset + amount, leftLength, memory);
+            if (amountInPage == 0) {
+                break;
+            }
+            amount += amountInPage;
+            leftLength -= amountInPage;
+            vaddrACC += amountInPage;
+        }
+
+//        int amount = Math.min(length, memory.length - vaddr);
+//        System.arraycopy(data, offset, memory, vaddr, amount);
 
         return amount;
+    }
+
+    protected int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                           int length, byte[] memory) {
+        TranslationEntry page = translate(vaddr / pageSize);
+        if (page == null || !page.valid || page.readOnly) {
+            return 0;
+        }
+        int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
+        int amount = Math.min(length, pageSize - (vaddr % pageSize));
+        System.arraycopy(data, offset, memory, paddrInPage, amount);
+        return amount;
+    }
+
+
+    protected void allocMemory(int vaddr, int length, boolean readOnly) {
+        for (int i = 0; i < length; i++) {
+            pageTable[vaddr + i] = UserKernel.pagePool.allocPage();
+            pageTable[vaddr + i].readOnly = readOnly;
+        }
+    }
+
+    protected void freeMemory(int vaddr, int length) {
+        for (int i = 0; i < length; i++) {
+            UserKernel.pagePool.freePage(pageTable[vaddr + i]);
+            pageTable[vaddr + i] = null;
+        }
+    }
+
+    protected TranslationEntry translate(int vaddr) {
+        return pageTable[vaddr];
     }
 
     /**
@@ -253,10 +330,12 @@ public class UserProcess {
         initialPC = coff.getEntryPoint();
 
         // next comes the stack; stack pointer initially points to top of it
+        allocMemory(numPages, stackPages, false);
         numPages += stackPages;
         initialSP = numPages * pageSize;
 
         // and finally reserve 1 page for arguments
+        allocMemory(numPages, 1, false);
         numPages++;
 
         if (!loadSections())
@@ -268,7 +347,7 @@ public class UserProcess {
 
         this.argc = args.length;
         this.argv = entryOffset;
-
+        System.out.println("page arg is " + entryOffset / pageSize + " ppn = " + translate(entryOffset / pageSize).ppn);
         for (int i = 0; i < argv.length; i++) {
             byte[] stringOffsetBytes = Lib.bytesFromInt(stringOffset);
             Lib.assertTrue(writeVirtualMemory(entryOffset, stringOffsetBytes) == 4);
@@ -280,8 +359,10 @@ public class UserProcess {
             stringOffset += 1;
         }
 
+
         return true;
     }
+
 
     /**
      * Allocates memory for this process, and loads the COFF sections into
@@ -291,7 +372,13 @@ public class UserProcess {
      * @return <tt>true</tt> if the sections were successfully loaded.
      */
     protected boolean loadSections() {
-        if (numPages > Machine.processor().getNumPhysPages()) {
+//        if (numPages > Machine.processor().getNumPhysPages()) {
+//            coff.close();
+//            Lib.debug(dbgProcess, "\tinsufficient physical memory");
+//            return false;
+//        }
+
+        if (numPages > UserKernel.pagePool.getFreePages()) {
             coff.close();
             Lib.debug(dbgProcess, "\tinsufficient physical memory");
             return false;
@@ -303,12 +390,13 @@ public class UserProcess {
 
             Lib.debug(dbgProcess, "\tinitializing " + section.getName()
                     + " section (" + section.getLength() + " pages)");
+            //alloc memory
+            allocMemory(section.getFirstVPN(), section.getLength(), section.isReadOnly());
 
             for (int i = 0; i < section.getLength(); i++) {
-                int vpn = section.getFirstVPN() + i;
+                int ppn = translate(section.getFirstVPN() + i).ppn;
 
-                // for now, just assume virtual addresses=physical addresses
-                section.loadPage(i, vpn);
+                section.loadPage(i, ppn);
             }
         }
 
@@ -319,6 +407,11 @@ public class UserProcess {
      * Release any resources allocated by <tt>loadSections()</tt>.
      */
     protected void unloadSections() {
+        for (int s = 0; s < coff.getNumSections(); s++) {
+            CoffSection section = coff.getSection(s);
+            //alloc memory
+            freeMemory(section.getFirstVPN(), section.getLength());
+        }
     }
 
     /**
@@ -344,6 +437,16 @@ public class UserProcess {
         processor.writeRegister(Processor.regA1, argv);
     }
 
+    private void freeResources() {
+        //free stack
+        freeMemory(initialSP / pageSize - stackPages, stackPages);
+        //free args
+        freeMemory(argv / pageSize, 1);
+        unloadSections();
+        //close all files
+        openedFiles.clear();
+    }
+
     /**
      * Handle the halt() system call.
      */
@@ -358,9 +461,7 @@ public class UserProcess {
 
     private int handleExit(int status) {
         Lib.debug(dbgProcess, "Exit with status " + status + ", finish process!");
-        unloadSections();
-        //close all files
-        openedFiles.clear();
+        freeResources();
         exitStatus = status;
         KThread.currentThread().finish();
         return status;

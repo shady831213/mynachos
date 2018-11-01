@@ -2,7 +2,9 @@ package nachos.userprog;
 
 import nachos.machine.*;
 import nachos.threads.*;
-import nachos.userprog.*;
+
+import java.util.LinkedList;
+import java.util.ListIterator;
 
 /**
  * A kernel that can support multiple user processes.
@@ -23,7 +25,7 @@ public class UserKernel extends ThreadedKernel {
         super.initialize(args);
 
         console = new SynchConsole(Machine.console());
-
+        pagePool.initialize(Machine.processor().getNumPhysPages());
         Machine.processor().setExceptionHandler(new Runnable() {
             public void run() {
                 exceptionHandler();
@@ -201,4 +203,63 @@ public class UserKernel extends ThreadedKernel {
 
     // dummy variables to make javac smarter
     private static Coff dummy1 = null;
+
+    final public static PagePool pagePool = new PagePool();
+
+    public static class PagePool {
+        final private LinkedList<TranslationEntry> PageEntries;
+        private ListIterator<TranslationEntry> iterator;
+        private int freePages;
+
+        PagePool() {
+            PageEntries = new LinkedList<>();
+        }
+
+        private void initialize(int pageNum) {
+            Lib.assertTrue(pageNum > 0);
+            for (int i = 0; i < pageNum; i++) {
+                PageEntries.add(new TranslationEntry(i, i, false, true, false, false));
+            }
+            iterator = PageEntries.listIterator();
+            freePages = pageNum;
+        }
+
+        private TranslationEntry nextPage() {
+            //make it a ring
+            if (!iterator.hasNext()) {
+                iterator = PageEntries.listIterator();
+            }
+            return iterator.next();
+        }
+
+        public int getFreePages() {
+            return freePages;
+        }
+
+        public TranslationEntry allocPage() {
+
+            TranslationEntry page = nextPage();
+            if (!page.valid) {
+                freePages--;
+                page.valid = true;
+                return page;
+            }
+            int id = page.ppn;
+            //one round
+            for (TranslationEntry nextPage = nextPage(); nextPage.ppn != id; ) {
+                if (!nextPage.valid) {
+                    freePages--;
+                    nextPage.valid = true;
+                    return nextPage;
+                }
+            }
+            return null;
+        }
+
+        public void freePage(TranslationEntry page) {
+            freePages++;
+            page.readOnly = true;
+            page.valid = false;
+        }
+    }
 }
