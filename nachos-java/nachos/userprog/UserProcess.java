@@ -4,6 +4,7 @@ import nachos.machine.*;
 import nachos.threads.*;
 
 import java.io.EOFException;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Vector;
 
@@ -31,6 +32,9 @@ public class UserProcess {
         //stdin(0) and stdout(1)
         stdin = UserKernel.console.openForReading();
         stdout = UserKernel.console.openForWriting();
+
+        processID = processCnt;
+        processCnt++;
     }
 
     /**
@@ -58,13 +62,18 @@ public class UserProcess {
      * @param args the arguments to pass to the executable.
      * @return <tt>true</tt> if the program was successfully executed.
      */
-    public UThread execute(String name, String[] args) {
+    public boolean execute(String name, String[] args) {
         if (!load(name, args))
-            return null;
+            return false;
 
         UThread thread = new UThread(this);
         thread.setName(name).fork();
-        return thread;
+        rootThread = thread;
+        return true;
+    }
+
+    public void join() {
+        rootThread.join();
     }
 
     /**
@@ -447,6 +456,12 @@ public class UserProcess {
         openedFiles.clear();
     }
 
+    private UserProcess createSubProcess() {
+        UserProcess process = newUserProcess();
+        subProcess.put(process.processID, process);
+        return process;
+    }
+
     /**
      * Handle the halt() system call.
      */
@@ -464,7 +479,48 @@ public class UserProcess {
         freeResources();
         exitStatus = status;
         KThread.currentThread().finish();
+        if (isRoot()) {
+            Machine.halt();
+        }
         return status;
+    }
+
+    private void handleExitAbnormal() {
+        Lib.debug(dbgProcess, "Exit abnormal , finish process!");
+        freeResources();
+        error = true;
+        KThread.currentThread().finish();
+        if (isRoot()) {
+            Machine.halt();
+        }
+    }
+
+    private int handleExec(int fileVaddr, int argc, int argv) {
+        String filename = readVirtualMemoryString(fileVaddr, maxFileNameLen);
+        Lib.debug(dbgProcess, "exec filename :" + filename + "!");
+        String[] args = new String[argc];
+        int offset = 0;
+        for (int i = 0; i < argc; i++) {
+            args[i] = readVirtualMemoryString(argv + offset, maxFileNameLen);
+            offset += args[i].getBytes().length;
+        }
+        UserProcess process = createSubProcess();
+        process.execute(filename, args);
+        return process.processID;
+    }
+
+    private int handleJoin(int pid, int vaddr) {
+        Lib.debug(dbgProcess, "join!");
+        UserProcess process = subProcess.get(pid);
+        if (process == null) {
+            return -1;
+        }
+        process.join();
+        writeVirtualMemory(vaddr, Lib.bytesFromInt(process.exitStatus));
+        if (process.error) {
+            return 0;
+        }
+        return 1;
     }
 
     private OpenFile getFileByDesp(int desp) {
@@ -631,8 +687,13 @@ public class UserProcess {
                 return handleRead(a0, a1, a2);
             case syscallWrite:
                 return handleWrite(a0, a1, a2);
+            case syscallExec:
+                return handleExec(a0, a1, a2);
+            case syscallJoin:
+                return handleJoin(a0, a1);
             default:
                 Lib.debug(dbgProcess, "Unknown syscall " + syscall);
+                handleExitAbnormal();
                 Lib.assertNotReached("Unknown system call!");
         }
         return 0;
@@ -664,7 +725,8 @@ public class UserProcess {
             default:
                 Lib.debug(dbgProcess, "Unexpected exception: " +
                         Processor.exceptionNames[cause]);
-                Lib.assertNotReached("Unexpected exception");
+                handleExitAbnormal();
+                //Lib.assertNotReached("Unexpected exception");
         }
     }
 
@@ -709,6 +771,12 @@ public class UserProcess {
     }
 
     private int exitStatus = 0;
+
+    public boolean isError() {
+        return error;
+    }
+
+    private boolean error = false;
 
     protected final int fileDespStart = 2;
     private OpenFile stdin, stdout;
@@ -769,4 +837,13 @@ public class UserProcess {
     }
 
     private openFileCache openedFiles = new openFileCache(maxFiles);
+
+    private int processID;
+
+    static int processCnt = 0;
+
+    private HashMap<Integer, UserProcess> subProcess = new HashMap<>();
+
+    private UThread rootThread;
+
 }

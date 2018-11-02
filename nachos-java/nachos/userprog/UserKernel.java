@@ -46,9 +46,8 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("halt.coff", new String[]{});
-                Lib.assertTrue(thread != null);
-                thread.join();
+                Lib.assertTrue(process.execute("halt.coff", new String[]{}));
+                process.join();
                 //check exit status
                 Lib.assertTrue(process.getExitStatus() == 0);
             }
@@ -58,8 +57,8 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("create_test.coff", new String[]{"create_test", "create_file"});
-                thread.join();
+                Lib.assertTrue(process.execute("create_test.coff", new String[]{"create_test", "create_file"}));
+                process.join();
                 //check create file success
                 Lib.assertTrue(ThreadedKernel.fileSystem.remove("create_file"));
                 //check exit status
@@ -71,8 +70,8 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("open_test.coff", new String[]{"open_test", "open_file"});
-                thread.join();
+                Lib.assertTrue(process.execute("open_test.coff", new String[]{"open_test", "open_file"}));
+                process.join();
                 //check create file success
                 Lib.assertTrue(ThreadedKernel.fileSystem.remove("open_file"));
                 //check exit status
@@ -84,8 +83,8 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("close_test.coff", new String[]{"close_test", "close_file"});
-                thread.join();
+                Lib.assertTrue(process.execute("close_test.coff", new String[]{"close_test", "close_file"}));
+                process.join();
                 //check create file success
                 Lib.assertTrue(ThreadedKernel.fileSystem.remove("close_file"));
                 //check exit status
@@ -97,8 +96,8 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("unlink_test.coff", new String[]{"unlink_test", "unlink_file"});
-                thread.join();
+                Lib.assertTrue(process.execute("unlink_test.coff", new String[]{"unlink_test", "unlink_file"}));
+                process.join();
                 //check removed file success
                 Lib.assertTrue(!ThreadedKernel.fileSystem.remove("unlink_file"));
                 //check exit status
@@ -110,8 +109,8 @@ public class UserKernel extends ThreadedKernel {
             @Override
             public void run() {
                 UserProcess process = UserProcess.newUserProcess();
-                UThread thread = process.execute("write_read_test.coff", new String[]{"write_read_test", "read_src_file", "write_dst_file"});
-                thread.join();
+                Lib.assertTrue(process.execute("write_read_test.coff", new String[]{"write_read_test", "read_src_file", "write_dst_file"}));
+                process.join();
                 //check removed file success
                 Lib.assertTrue(ThreadedKernel.fileSystem.remove("read_src_file"));
                 Lib.assertTrue(ThreadedKernel.fileSystem.remove("write_dst_file"));
@@ -181,12 +180,11 @@ public class UserKernel extends ThreadedKernel {
         UserProcess process = UserProcess.newRootUserProcess();
 
         String shellProgram = Machine.getShellProgramName();
-        UThread thread = process.execute(shellProgram, new String[]{});
-        Lib.assertTrue(thread != null);
+        Lib.assertTrue(process.execute(shellProgram, new String[]{}));
 
 
         //wait for process exit! fix me
-        thread.join();
+        process.join();
     }
 
     /**
