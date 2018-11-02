@@ -499,10 +499,11 @@ public class UserProcess {
         String filename = readVirtualMemoryString(fileVaddr, maxFileNameLen);
         Lib.debug(dbgProcess, "exec filename :" + filename + "!");
         String[] args = new String[argc];
-        int offset = 0;
+        int offset = argc * 4;
         for (int i = 0; i < argc; i++) {
             args[i] = readVirtualMemoryString(argv + offset, maxFileNameLen);
-            offset += args[i].getBytes().length;
+            offset += args[i].getBytes().length + 1;
+            Lib.debug(dbgProcess, "args " + i + " is " + args[i]);
         }
         UserProcess process = createSubProcess();
         process.execute(filename, args);
@@ -517,6 +518,8 @@ public class UserProcess {
         }
         process.join();
         writeVirtualMemory(vaddr, Lib.bytesFromInt(process.exitStatus));
+        subProcess.remove(pid);
+        Lib.debug(dbgProcess, "subprocess " + process.processID + " exit!");
         if (process.error) {
             return 0;
         }
