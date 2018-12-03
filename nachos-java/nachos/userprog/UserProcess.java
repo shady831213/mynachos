@@ -390,17 +390,17 @@ public class UserProcess {
      * @return <tt>true</tt> if the sections were successfully loaded.
      */
     protected boolean loadSections() {
-//        if (numPages > Machine.processor().getNumPhysPages()) {
-//            coff.close();
-//            Lib.debug(dbgProcess, "\tinsufficient physical memory");
-//            return false;
-//        }
-
-        if (numPages > UserKernel.pagePool.getFreePages()) {
+        if (numPages > Machine.processor().getNumPhysPages()) {
             coff.close();
             Lib.debug(dbgProcess, "\tinsufficient physical memory");
             return false;
         }
+
+//        if (numPages > UserKernel.pagePool.getFreePages()) {
+//            coff.close();
+//            Lib.debug(dbgProcess, "\tinsufficient physical memory");
+//            return false;
+//        }
 
         // load sections
         for (int s = 0; s < coff.getNumSections(); s++) {
