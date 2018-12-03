@@ -249,17 +249,17 @@ public class UserKernel extends ThreadedKernel {
         public TranslationEntry allocPage() {
 
             TranslationEntry page = nextPage();
-            if (!page.valid) {
+            if (!page.used) {
                 freePages--;
-                page.valid = true;
+                page.used = true;
                 return page;
             }
             int id = page.ppn;
             //one round
             for (TranslationEntry nextPage = nextPage(); nextPage.ppn != id; ) {
-                if (!nextPage.valid) {
+                if (!nextPage.used) {
                     freePages--;
-                    nextPage.valid = true;
+                    nextPage.used = true;
                     return nextPage;
                 }
             }
@@ -269,7 +269,7 @@ public class UserKernel extends ThreadedKernel {
         public void freePage(TranslationEntry page) {
             freePages++;
             page.readOnly = true;
-            page.valid = false;
+            page.used = false;
         }
     }
 }

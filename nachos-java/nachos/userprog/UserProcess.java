@@ -268,12 +268,21 @@ public class UserProcess {
         for (int i = 0; i < length; i++) {
             pageTable[vaddr + i] = UserKernel.pagePool.allocPage();
             pageTable[vaddr + i].readOnly = readOnly;
+            pageTable[vaddr + i].vpn = vaddr;
+            //if not use tlb, always in memory
+            if (!Machine.processor().hasTLB()) {
+                pageTable[vaddr + i].valid = true;
+            }
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
             UserKernel.pagePool.freePage(pageTable[vaddr + i]);
+            //if not use tlb, always in memory
+            if (!Machine.processor().hasTLB()) {
+                pageTable[vaddr + i].valid = false;
+            }
             pageTable[vaddr + i] = null;
         }
     }
@@ -446,7 +455,7 @@ public class UserProcess {
         processor.writeRegister(Processor.regA1, argv);
     }
 
-    private void freeResources() {
+    protected void freeResources() {
         //free stack
         freeMemory(initialSP / pageSize - stackPages, stackPages);
         //free args
@@ -841,7 +850,7 @@ public class UserProcess {
 
     private openFileCache openedFiles = new openFileCache(maxFiles);
 
-    private int processID;
+    protected int processID;
 
     static int processCnt = 0;
 
