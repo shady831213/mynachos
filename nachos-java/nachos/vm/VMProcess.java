@@ -14,7 +14,7 @@ public class VMProcess extends UserProcess {
      */
     public VMProcess() {
         super();
-        VMKernel.InvertedPageTable.put(processID, pageTable);
+        //VMKernel.InvertedPageTable.put(processID, pageTable);
     }
 
     /**
@@ -91,10 +91,10 @@ public class VMProcess extends UserProcess {
     }
 
 
-    protected void freeResources() {
-        super.freeResources();
-        VMKernel.InvertedPageTable.remove(processID);
-    }
+//    protected void freeResources() {
+//        super.freeResources();
+//        VMKernel.InvertedPageTable.remove(processID);
+//    }
 
     private static final int pageSize = Processor.pageSize;
     private static final char dbgProcess = 'a';
