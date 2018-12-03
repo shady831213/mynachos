@@ -61,9 +61,7 @@ public class VMProcess extends UserProcess {
         Lib.debug(dbgVM, "handleTlbMiss!");
         Processor processor = Machine.processor();
         int vpn = processor.readRegister(Processor.regBadVAddr);
-        //always valid entry;Fix Me!
         TranslationEntry ppnEntry = translate(vpn / pageSize);
-        ppnEntry.valid = true;
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
         processor.writeTLBEntry(tlbIdx, ppnEntry);

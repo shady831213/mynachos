@@ -269,20 +269,14 @@ public class UserProcess {
             pageTable[vaddr + i] = UserKernel.pagePool.allocPage();
             pageTable[vaddr + i].readOnly = readOnly;
             pageTable[vaddr + i].vpn = vaddr + i;
-            //if not use tlb, always in memory
-            if (!Machine.processor().hasTLB()) {
-                pageTable[vaddr + i].valid = true;
-            }
+            pageTable[vaddr + i].valid = true;
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
             UserKernel.pagePool.freePage(pageTable[vaddr + i]);
-            //if not use tlb, always in memory
-            if (!Machine.processor().hasTLB()) {
-                pageTable[vaddr + i].valid = false;
-            }
+            pageTable[vaddr + i].valid = false;
             pageTable[vaddr + i] = null;
         }
     }
