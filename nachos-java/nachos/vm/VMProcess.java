@@ -23,6 +23,7 @@ public class VMProcess extends UserProcess {
      */
     public void saveState() {
         super.saveState();
+
     }
 
     /**
@@ -30,7 +31,12 @@ public class VMProcess extends UserProcess {
      * <tt>UThread.restoreState()</tt>.
      */
     public void restoreState() {
-        super.restoreState();
+        // super.restoreState();
+        //invalid all tlb
+        Processor processor = Machine.processor();
+        for (int i = 0; i < processor.getTLBSize(); i++) {
+            processor.writeTLBEntry(i, new TranslationEntry());
+        }
     }
 
     /**
@@ -52,9 +58,15 @@ public class VMProcess extends UserProcess {
 
 
     private void handleTlbMiss() {
-        int vpn = Machine.processor().readRegister(Processor.regBadVAddr);
-        //valid entry temp;Fix Me!
-        TranslationEntry ppnEntry = translate(vpn/pageSize);
+        Lib.debug(dbgVM, "handleTlbMiss!");
+        Processor processor = Machine.processor();
+        int vpn = processor.readRegister(Processor.regBadVAddr);
+        //always valid entry;Fix Me!
+        TranslationEntry ppnEntry = translate(vpn / pageSize);
+        ppnEntry.valid = true;
+        //ranodomly update tlb
+        int tlbIdx = Lib.random(processor.getTLBSize());
+        processor.writeTLBEntry(tlbIdx, ppnEntry);
     }
 
     /**
@@ -71,6 +83,7 @@ public class VMProcess extends UserProcess {
         switch (cause) {
             case Processor.exceptionTLBMiss:
                 handleTlbMiss();
+                break;
             default:
                 super.handleException(cause);
                 break;

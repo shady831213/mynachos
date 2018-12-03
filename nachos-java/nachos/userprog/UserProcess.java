@@ -182,7 +182,7 @@ public class UserProcess {
     protected int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
                                           int length, byte[] memory) {
         TranslationEntry page = translate(vaddr / pageSize);
-        if (page == null || !page.valid) {
+        if (page == null) {
             return 0;
         }
         int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
@@ -254,7 +254,7 @@ public class UserProcess {
     protected int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
                                            int length, byte[] memory) {
         TranslationEntry page = translate(vaddr / pageSize);
-        if (page == null || !page.valid || page.readOnly) {
+        if (page == null || page.readOnly) {
             return 0;
         }
         int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
@@ -268,7 +268,7 @@ public class UserProcess {
         for (int i = 0; i < length; i++) {
             pageTable[vaddr + i] = UserKernel.pagePool.allocPage();
             pageTable[vaddr + i].readOnly = readOnly;
-            pageTable[vaddr + i].vpn = vaddr;
+            pageTable[vaddr + i].vpn = vaddr + i;
             //if not use tlb, always in memory
             if (!Machine.processor().hasTLB()) {
                 pageTable[vaddr + i].valid = true;
