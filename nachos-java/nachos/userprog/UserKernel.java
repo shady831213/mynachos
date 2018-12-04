@@ -225,7 +225,8 @@ public class UserKernel extends ThreadedKernel {
         private int swapChangeTh;
         private int swapWaterLevel;
         //start a Tthread to swap?
-        //final private Lock entryLock = new Lock();
+        Lock lock;
+        Condition2 cond;
 
         PagePool() {
             pointer = 0;
@@ -234,6 +235,8 @@ public class UserKernel extends ThreadedKernel {
         private void initialize(int pageNum, int swapChangeTh, int swapWaterLevel) {
             Lib.assertTrue(pageNum > 0);
             Lib.assertTrue(swapChangeTh > 0);
+            lock = new Lock();
+            cond = new Condition2(lock);
             PageTable = new TranslationEntry[pageNum];
             usedCnt = new int[pageNum];
             this.swapChangeTh = swapChangeTh;
@@ -261,7 +264,10 @@ public class UserKernel extends ThreadedKernel {
         }
 
         public TranslationEntry allocPage() {
-
+            lock.acquire();
+            while (freePages == 0) {
+                cond.sleep();
+            }
             TranslationEntry page = nextPage();
             if (page.used) {
                 usedCnt[page.ppn]++;
@@ -270,6 +276,7 @@ public class UserKernel extends ThreadedKernel {
             if (!page.valid) {
                 freePages--;
                 page.valid = true;
+                lock.release();
                 return page;
             }
             int id = page.ppn;
@@ -282,17 +289,21 @@ public class UserKernel extends ThreadedKernel {
                 if (!nextPage.valid) {
                     freePages--;
                     nextPage.valid = true;
+                    lock.release();
                     return nextPage;
                 }
             }
             Lib.assertNotReached("OOM!");
+            lock.release();
             return null;
         }
 
         public void freePage(TranslationEntry page) {
+            lock.acquire();
             freePages++;
             page.readOnly = true;
             page.valid = false;
+            lock.release();
         }
 
         public TranslationEntry getEntryByPaddr(int paddr) {
