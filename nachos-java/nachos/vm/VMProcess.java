@@ -146,13 +146,6 @@ public class VMProcess extends UserProcess {
         processor.writeTLBEntry(tlbIdx, page);
     }
 
-    private void handlePageFault() {
-        Lib.debug(dbgVM, "handlePageFault!");
-        Processor processor = Machine.processor();
-        int vpn = processor.readRegister(Processor.regBadVAddr);
-        VMKernel.ipt.swapIn(processID, translate(vpn / pageSize));
-    }
-
     /**
      * Handle a user exception. Called by
      * <tt>UserKernel.exceptionHandler()</tt>. The
@@ -167,9 +160,6 @@ public class VMProcess extends UserProcess {
         switch (cause) {
             case Processor.exceptionTLBMiss:
                 handleTlbMiss();
-                break;
-            case Processor.exceptionPageFault:
-                handlePageFault();
                 break;
             default:
                 super.handleException(cause);
