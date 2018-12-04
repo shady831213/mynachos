@@ -153,7 +153,7 @@ public class UserProcess {
         byte[] memory = Machine.processor().getMemory();
 
         // for now, just assume that virtual addresses equal physical addresses
-        if (vaddr < 0 || vaddr >= memory.length)
+        if (vaddr < 0)
             return 0;
 
         int startVaddr = vaddr + offset;
@@ -225,7 +225,7 @@ public class UserProcess {
         byte[] memory = Machine.processor().getMemory();
 
         // for now, just assume that virtual addresses equal physical addresses
-        if (vaddr < 0 || vaddr >= memory.length)
+        if (vaddr < 0)
             return 0;
 
         int startVaddr = vaddr + offset;
@@ -358,7 +358,7 @@ public class UserProcess {
 
         this.argc = args.length;
         this.argv = entryOffset;
-        System.out.println("page arg is " + entryOffset / pageSize + " ppn = " + translate(entryOffset / pageSize).ppn);
+        System.out.println("numPages is " + numPages + " page arg is " + entryOffset / pageSize + " ppn = " + translate(entryOffset / pageSize).ppn);
         for (int i = 0; i < argv.length; i++) {
             byte[] stringOffsetBytes = Lib.bytesFromInt(stringOffset);
             Lib.assertTrue(writeVirtualMemory(entryOffset, stringOffsetBytes) == 4);

@@ -33,9 +33,22 @@ public class VMProcess extends UserProcess {
     public void restoreState() {
         // super.restoreState();
         //invalid all tlb
+        invalidTLB();
+    }
+
+    private void invalidTLB() {
         Processor processor = Machine.processor();
         for (int i = 0; i < processor.getTLBSize(); i++) {
             processor.writeTLBEntry(i, new TranslationEntry());
+        }
+    }
+
+    private void invalidTLBEntry(TranslationEntry page) {
+        Processor processor = Machine.processor();
+        for (int i = 0; i < processor.getTLBSize(); i++) {
+            if (processor.readTLBEntry(i).ppn == page.ppn) {
+                processor.writeTLBEntry(i, new TranslationEntry());
+            }
         }
     }
 
@@ -57,25 +70,69 @@ public class VMProcess extends UserProcess {
     }
 
 
+    protected int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                          int length, byte[] memory) {
+        TranslationEntry page = translate(vaddr / pageSize);
+        if (page == null) {
+            return 0;
+        }
+        if (!page.valid) {
+            VMKernel.ipt.swapIn(processID, page);
+            invalidTLBEntry(page);
+        }
+        int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
+        int amount = Math.min(length, pageSize - (vaddr % pageSize));
+        System.arraycopy(memory, paddrInPage, data, offset, amount);
+        return amount;
+    }
+
+    protected int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                           int length, byte[] memory) {
+        TranslationEntry page = translate(vaddr / pageSize);
+        if (page == null || page.readOnly) {
+            return 0;
+        }
+        if (!page.valid) {
+            VMKernel.ipt.swapIn(processID, page);
+            invalidTLBEntry(page);
+        }
+        int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
+        int amount = Math.min(length, pageSize - (vaddr % pageSize));
+        System.arraycopy(data, offset, memory, paddrInPage, amount);
+        return amount;
+    }
+
+
     protected void allocMemory(int vaddr, int length, boolean readOnly) {
-        super.allocMemory(vaddr, length, readOnly);
         for (int i = 0; i < length; i++) {
-            VMKernel.ipt.insert(processID, pageTable[vaddr + i]);
+            pageTable[vaddr + i] = VMKernel.allocPage(processID);
+            pageTable[vaddr + i].readOnly = readOnly;
+            pageTable[vaddr + i].valid = true;
+            pageTable[vaddr + i].vpn = vaddr + i;
+
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
-            VMKernel.ipt.delete(processID, pageTable[vaddr + i].ppn);
+            VMKernel.freePage(processID, pageTable[vaddr + i]);
+            pageTable[vaddr + i] = null;
         }
-        super.freeMemory(vaddr, length);
     }
 
     private void handleTlbMiss() {
         Lib.debug(dbgVM, "handleTlbMiss!");
         Processor processor = Machine.processor();
         int vpn = processor.readRegister(Processor.regBadVAddr);
+        Lib.debug(dbgVM, "vaddr = " + Lib.toHexString(vpn));
         TranslationEntry page = translate(vpn / pageSize);
+        Lib.debug(dbgVM, "vpn = " + page.vpn);
+        Lib.debug(dbgVM, "ppn = " + page.ppn);
+        Lib.debug(dbgVM, "valid = " + page.valid);
+
+        if (!page.valid) {
+            VMKernel.ipt.swapIn(processID, page);
+        }
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
         //update dirty and used bit
@@ -87,6 +144,13 @@ public class VMProcess extends UserProcess {
         }
         //tlb replacement
         processor.writeTLBEntry(tlbIdx, page);
+    }
+
+    private void handlePageFault() {
+        Lib.debug(dbgVM, "handlePageFault!");
+        Processor processor = Machine.processor();
+        int vpn = processor.readRegister(Processor.regBadVAddr);
+        VMKernel.ipt.swapIn(processID, translate(vpn / pageSize));
     }
 
     /**
@@ -103,6 +167,9 @@ public class VMProcess extends UserProcess {
         switch (cause) {
             case Processor.exceptionTLBMiss:
                 handleTlbMiss();
+                break;
+            case Processor.exceptionPageFault:
+                handlePageFault();
                 break;
             default:
                 super.handleException(cause);

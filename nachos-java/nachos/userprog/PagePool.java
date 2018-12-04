@@ -41,12 +41,14 @@ public class PagePool {
             bitmap[pointer] = false;
             entry.ppn = pointer;
             nextPointer();
+            freePages--;
             return entry;
         }
         for (int p = pointer; p != currentPointer; p = nextPointer()) {
             if (bitmap[p]) {
                 bitmap[p] = false;
                 entry.ppn = p;
+                freePages--;
                 return entry;
             }
         }
@@ -58,5 +60,11 @@ public class PagePool {
         Lib.assertTrue(!bitmap[Paddr]);
         bitmap[Paddr] = true;
         freePages++;
+    }
+
+    public void loadPage(int Paddr) {
+        Lib.assertTrue(bitmap[Paddr]);
+        bitmap[Paddr] = false;
+        freePages--;
     }
 }
