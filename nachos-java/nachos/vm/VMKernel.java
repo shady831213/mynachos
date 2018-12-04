@@ -1,11 +1,6 @@
 package nachos.vm;
 
-import nachos.machine.*;
-import nachos.threads.*;
 import nachos.userprog.*;
-import nachos.vm.*;
-
-import java.util.Hashtable;
 
 /**
  * A kernel that can support multiple demand-paging user processes.
@@ -51,5 +46,6 @@ public class VMKernel extends UserKernel {
 
     private static final char dbgVM = 'v';
 
-    //final public static Hashtable<Integer, TranslationEntry[]> InvertedPageTable = new Hashtable();
+    final public static InvertedPageTable ipt = new InvertedPageTable();
+
 }

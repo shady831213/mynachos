@@ -57,6 +57,20 @@ public class VMProcess extends UserProcess {
     }
 
 
+    protected void allocMemory(int vaddr, int length, boolean readOnly) {
+        super.allocMemory(vaddr, length, readOnly);
+        for (int i = 0; i < length; i++) {
+            VMKernel.ipt.insert(processID, pageTable[vaddr + i]);
+        }
+    }
+
+    protected void freeMemory(int vaddr, int length) {
+        for (int i = 0; i < length; i++) {
+            VMKernel.ipt.delete(processID, pageTable[vaddr + i].ppn);
+        }
+        super.freeMemory(vaddr, length);
+    }
+
     private void handleTlbMiss() {
         Lib.debug(dbgVM, "handleTlbMiss!");
         Processor processor = Machine.processor();
@@ -66,8 +80,11 @@ public class VMProcess extends UserProcess {
         int tlbIdx = Lib.random(processor.getTLBSize());
         //update dirty and used bit
         TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
-        //VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).used = oldPage.used;
-        //VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).dirty = oldPage.dirty;
+        InvertedPageTableNode invertPage = VMKernel.ipt.lookup(oldPage.ppn);
+        if (invertPage != null) {
+            invertPage.getPage().used = oldPage.used;
+            invertPage.getPage().dirty = oldPage.dirty;
+        }
         //tlb replacement
         processor.writeTLBEntry(tlbIdx, page);
     }
