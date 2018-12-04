@@ -61,10 +61,15 @@ public class VMProcess extends UserProcess {
         Lib.debug(dbgVM, "handleTlbMiss!");
         Processor processor = Machine.processor();
         int vpn = processor.readRegister(Processor.regBadVAddr);
-        TranslationEntry ppnEntry = translate(vpn / pageSize);
+        TranslationEntry page = translate(vpn / pageSize);
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
-        processor.writeTLBEntry(tlbIdx, ppnEntry);
+        //update dirty and used bit
+        TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
+        VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).used = oldPage.used;
+        VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).dirty = oldPage.dirty;
+        //tlb replacement
+        processor.writeTLBEntry(tlbIdx, page);
     }
 
     /**

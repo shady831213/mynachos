@@ -3,6 +3,8 @@ package nachos.userprog;
 import nachos.machine.*;
 import nachos.threads.*;
 
+import java.util.HashSet;
+import java.util.Hashtable;
 import java.util.LinkedList;
 import java.util.ListIterator;
 
@@ -25,7 +27,7 @@ public class UserKernel extends ThreadedKernel {
         super.initialize(args);
 
         console = new SynchConsole(Machine.console());
-        pagePool.initialize(Machine.processor().getNumPhysPages());
+        pagePool.initialize(Machine.processor().getNumPhysPages(), 3, Machine.processor().getNumPhysPages() * 2 / 3);
         Machine.processor().setExceptionHandler(new Runnable() {
             public void run() {
                 exceptionHandler();
@@ -218,20 +220,34 @@ public class UserKernel extends ThreadedKernel {
 
     public static class PagePool {
         final private LinkedList<TranslationEntry> PageEntries;
+        private TranslationEntry InvertedPageTable[];
         private ListIterator<TranslationEntry> iterator;
         private int freePages;
+        //for nth clock algorithm
+        private int usedCnt[];
+        private int swapChangeTh;
+        private int swapWaterLevel;
+        //start a Tthread to swap?
+        //final private Lock entryLock = new Lock();
 
         PagePool() {
             PageEntries = new LinkedList<>();
         }
 
-        private void initialize(int pageNum) {
+        private void initialize(int pageNum, int swapChangeTh, int swapWaterLevel) {
             Lib.assertTrue(pageNum > 0);
+            InvertedPageTable = new TranslationEntry[pageNum];
+            usedCnt = new int[pageNum];
+            this.swapChangeTh = swapChangeTh;
+            this.swapWaterLevel = swapWaterLevel;
             for (int i = 0; i < pageNum; i++) {
-                PageEntries.add(new TranslationEntry(i, i, false, true, false, false));
+                TranslationEntry entry = new TranslationEntry(i, i, false, true, false, false);
+                PageEntries.add(entry);
+                InvertedPageTable[i] = entry;
             }
             iterator = PageEntries.listIterator();
             freePages = pageNum;
+            Lib.assertTrue(swapWaterLevel <= freePages);
         }
 
         private TranslationEntry nextPage() {
@@ -249,6 +265,10 @@ public class UserKernel extends ThreadedKernel {
         public TranslationEntry allocPage() {
 
             TranslationEntry page = nextPage();
+            if (page.used) {
+                usedCnt[page.ppn]++;
+                page.used = false;
+            }
             if (!page.valid) {
                 freePages--;
                 page.valid = true;
@@ -256,13 +276,18 @@ public class UserKernel extends ThreadedKernel {
             }
             int id = page.ppn;
             //one round
-            for (TranslationEntry nextPage = nextPage(); nextPage.ppn != id; ) {
+            for (TranslationEntry nextPage = nextPage(); nextPage.ppn != id; nextPage = nextPage()) {
+                if (nextPage.used) {
+                    usedCnt[nextPage.ppn]++;
+                    nextPage.used = false;
+                }
                 if (!nextPage.valid) {
                     freePages--;
                     nextPage.valid = true;
                     return nextPage;
                 }
             }
+            Lib.assertNotReached("OOM!");
             return null;
         }
 
@@ -270,6 +295,10 @@ public class UserKernel extends ThreadedKernel {
             freePages++;
             page.readOnly = true;
             page.valid = false;
+        }
+
+        public TranslationEntry getEntryByPaddr(int paddr) {
+            return InvertedPageTable[paddr];
         }
     }
 }

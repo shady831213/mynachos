@@ -26,7 +26,7 @@ public class UserProcess {
      */
     public UserProcess() {
         int numPhysPages = Machine.processor().getNumPhysPages();
-        pageTable = new TranslationEntry[numPhysPages];
+        pageTable = new TranslationEntry[4096];
 //        for (int i = 0; i < numPhysPages; i++)
 //            pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
         //stdin(0) and stdout(1)
@@ -382,11 +382,16 @@ public class UserProcess {
      * @return <tt>true</tt> if the sections were successfully loaded.
      */
     protected boolean loadSections() {
-        if (numPages > Machine.processor().getNumPhysPages()) {
+        if (numPages > 4096) {
             coff.close();
-            Lib.debug(dbgProcess, "\tinsufficient physical memory");
+            Lib.debug(dbgProcess, "\tinsufficient virtual memory");
             return false;
         }
+//        if (numPages > Machine.processor().getNumPhysPages()) {
+//            coff.close();
+//            Lib.debug(dbgProcess, "\tinsufficient physical memory");
+//            return false;
+//        }
 
 //        if (numPages > UserKernel.pagePool.getFreePages()) {
 //            coff.close();
