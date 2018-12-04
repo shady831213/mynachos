@@ -268,13 +268,14 @@ public class UserProcess {
         for (int i = 0; i < length; i++) {
             pageTable[vaddr + i] = UserKernel.pagePool.allocPage();
             pageTable[vaddr + i].readOnly = readOnly;
+            pageTable[vaddr + i].valid = true;
             pageTable[vaddr + i].vpn = vaddr + i;
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
-            UserKernel.pagePool.freePage(pageTable[vaddr + i]);
+            UserKernel.pagePool.freePage(pageTable[vaddr + i].ppn);
             pageTable[vaddr + i] = null;
         }
     }

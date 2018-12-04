@@ -66,8 +66,8 @@ public class VMProcess extends UserProcess {
         int tlbIdx = Lib.random(processor.getTLBSize());
         //update dirty and used bit
         TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
-        VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).used = oldPage.used;
-        VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).dirty = oldPage.dirty;
+        //VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).used = oldPage.used;
+        //VMKernel.pagePool.getEntryByPaddr(oldPage.ppn).dirty = oldPage.dirty;
         //tlb replacement
         processor.writeTLBEntry(tlbIdx, page);
     }

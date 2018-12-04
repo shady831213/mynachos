@@ -3,9 +3,6 @@ package nachos.userprog;
 import nachos.machine.*;
 import nachos.threads.*;
 
-import java.util.LinkedList;
-import java.util.ListIterator;
-
 /**
  * A kernel that can support multiple user processes.
  */
@@ -25,7 +22,7 @@ public class UserKernel extends ThreadedKernel {
         super.initialize(args);
 
         console = new SynchConsole(Machine.console());
-        pagePool.initialize(Machine.processor().getNumPhysPages(), 2, Machine.processor().getNumPhysPages() * 2 / 3);
+        pagePool.initialize(Machine.processor().getNumPhysPages());
         Machine.processor().setExceptionHandler(new Runnable() {
             public void run() {
                 exceptionHandler();
@@ -217,46 +214,30 @@ public class UserKernel extends ThreadedKernel {
     final public static PagePool pagePool = new PagePool();
 
     public static class PagePool {
-        private TranslationEntry PageTable[];
+        private boolean bitmap[];
         private int pointer;
         private int freePages;
-        //for nth clock algorithm
-        private int usedCnt[];
-        private int swapChangeTh;
-        private int swapWaterLevel;
-        //start a Tthread to swap?
-        Lock lock;
-        Condition2 cond;
 
         PagePool() {
             pointer = 0;
         }
 
-        private void initialize(int pageNum, int swapChangeTh, int swapWaterLevel) {
+        private void initialize(int pageNum) {
             Lib.assertTrue(pageNum > 0);
-            Lib.assertTrue(swapChangeTh > 0);
-            lock = new Lock();
-            cond = new Condition2(lock);
-            PageTable = new TranslationEntry[pageNum];
-            usedCnt = new int[pageNum];
-            this.swapChangeTh = swapChangeTh;
-            this.swapWaterLevel = swapWaterLevel;
+            bitmap = new boolean[pageNum];
             for (int i = 0; i < pageNum; i++) {
-                PageTable[i] = new TranslationEntry(i, i, false, true, false, false);
+                bitmap[i] = true;
             }
             freePages = pageNum;
-            Lib.assertTrue(swapWaterLevel <= freePages);
-
         }
 
-        private TranslationEntry nextPage() {
+        private int nextPointer() {
             //make it a ring
-            TranslationEntry entry = PageTable[pointer];
             pointer++;
-            if (pointer == PageTable.length) {
+            if (pointer == bitmap.length) {
                 pointer = 0;
             }
-            return entry;
+            return pointer;
         }
 
         public int getFreePages() {
@@ -264,52 +245,30 @@ public class UserKernel extends ThreadedKernel {
         }
 
         public TranslationEntry allocPage() {
-            lock.acquire();
-            while (freePages == 0) {
-                cond.sleep();
+            TranslationEntry entry = new TranslationEntry();
+            int currentPointer = pointer;
+            if (bitmap[pointer]) {
+                bitmap[pointer] = false;
+                entry.ppn = pointer;
+                nextPointer();
+                return entry;
             }
-            TranslationEntry page = nextPage();
-            if (page.used) {
-                usedCnt[page.ppn]++;
-                page.used = false;
-            }
-            if (!page.valid) {
-                freePages--;
-                page.valid = true;
-                lock.release();
-                return page;
-            }
-            int id = page.ppn;
-            //one round
-            for (TranslationEntry nextPage = nextPage(); nextPage.ppn != id; nextPage = nextPage()) {
-                if (nextPage.used) {
-                    usedCnt[nextPage.ppn]++;
-                    nextPage.used = false;
-                }
-                if (!nextPage.valid) {
-                    freePages--;
-                    nextPage.valid = true;
-                    lock.release();
-                    return nextPage;
+            for (int p = pointer; p != currentPointer; p = nextPointer()) {
+                if (bitmap[p]) {
+                    bitmap[p] = false;
+                    entry.ppn = p;
+                    return entry;
                 }
             }
             Lib.assertNotReached("OOM!");
-            lock.release();
             return null;
         }
 
-        public void freePage(TranslationEntry page) {
-            lock.acquire();
+        public void freePage(int Paddr) {
+            Lib.assertTrue(!bitmap[Paddr]);
+            bitmap[Paddr] = true;
             freePages++;
-            page.readOnly = true;
-            page.valid = false;
-            lock.release();
         }
 
-        public TranslationEntry getEntryByPaddr(int paddr) {
-            Lib.assertTrue(paddr >= 0);
-            Lib.assertTrue(paddr < PageTable.length);
-            return PageTable[paddr];
-        }
     }
 }
