@@ -237,7 +237,7 @@ public class UserKernel extends ThreadedKernel {
             PageTable = new TranslationEntry[pageNum];
             usedCnt = new int[pageNum];
             this.swapChangeTh = swapChangeTh;
-            this.swapWaterLevel = swapWaterLevel - 1;
+            this.swapWaterLevel = swapWaterLevel;
             for (int i = 0; i < pageNum; i++) {
                 PageTable[i] = new TranslationEntry(i, i, false, true, false, false);
             }
