@@ -1,6 +1,5 @@
 package nachos.vm;
 
-import nachos.machine.Lib;
 import nachos.machine.Machine;
 import nachos.machine.TranslationEntry;
 import nachos.userprog.*;
@@ -21,6 +20,7 @@ public class VMKernel extends UserKernel {
      */
     public void initialize(String[] args) {
         super.initialize(args);
+        memMap.initialize(Machine.processor().getNumPhysPages());
     }
 
     /**
@@ -49,22 +49,6 @@ public class VMKernel extends UserKernel {
 
     private static final char dbgVM = 'v';
 
-    final public static InvertedPageTable ipt = new InvertedPageTable(pagePool);
+    final public static MemMap memMap = new MemMap();
 
-    public static TranslationEntry allocPage(int processId) {
-        if (pagePool.getFreePages() == 0) {
-            ipt.swap();
-        }
-        TranslationEntry page = pagePool.allocPage();
-        ipt.insert(processId, page);
-        return page;
-    }
-
-    public static void freePage(int processId, TranslationEntry page) {
-        if (page.valid) {
-            pagePool.freePage(page.ppn);
-            ipt.delete(page.ppn);
-        }
-        ipt.freeSwap(processId, page.vpn);
-    }
 }

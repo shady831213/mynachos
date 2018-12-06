@@ -1,9 +1,7 @@
 package nachos.vm;
 
 import nachos.machine.*;
-import nachos.threads.*;
 import nachos.userprog.*;
-import nachos.vm.*;
 
 /**
  * A <tt>UserProcess</tt> that supports demand-paging.
@@ -14,7 +12,7 @@ public class VMProcess extends UserProcess {
      */
     public VMProcess() {
         super();
-        //VMKernel.InvertedPageTable.put(processID, pageTable);
+        //VMKernel.MemMap.put(processID, pageTable);
     }
 
     /**
@@ -77,7 +75,7 @@ public class VMProcess extends UserProcess {
             return 0;
         }
         if (!page.valid) {
-            VMKernel.ipt.swapIn(processID, page);
+            VMKernel.memMap.swapIn(processID, page);
             invalidTLBEntry(page);
         }
         int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
@@ -93,7 +91,7 @@ public class VMProcess extends UserProcess {
             return 0;
         }
         if (!page.valid) {
-            VMKernel.ipt.swapIn(processID, page);
+            VMKernel.memMap.swapIn(processID, page);
             invalidTLBEntry(page);
         }
         int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
@@ -105,17 +103,18 @@ public class VMProcess extends UserProcess {
 
     protected void allocMemory(int vaddr, int length, boolean readOnly) {
         for (int i = 0; i < length; i++) {
-            pageTable[vaddr + i] = VMKernel.allocPage(processID);
+            Page page = VMKernel.memMap.allocPage();
+            Lib.assertTrue(page != null, "OOM!");
+            pageTable[vaddr + i] = new TranslationEntry();
             pageTable[vaddr + i].readOnly = readOnly;
-            pageTable[vaddr + i].valid = true;
             pageTable[vaddr + i].vpn = vaddr + i;
-
+            page.map(processID, pageTable[vaddr + i]);
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
-            VMKernel.freePage(processID, pageTable[vaddr + i]);
+            VMKernel.memMap.unmap(pageTable[vaddr + i].ppn);
             pageTable[vaddr + i] = null;
         }
     }
@@ -131,17 +130,13 @@ public class VMProcess extends UserProcess {
         Lib.debug(dbgVM, "valid = " + page.valid);
 
         if (!page.valid) {
-            VMKernel.ipt.swapIn(processID, page);
+            VMKernel.memMap.swapIn(processID, page);
         }
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
         //update dirty and used bit
         TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
-        InvertedPageTableNode invertPage = VMKernel.ipt.lookup(oldPage.ppn);
-        if (invertPage != null) {
-            invertPage.getPage().used = oldPage.used;
-            invertPage.getPage().dirty = oldPage.dirty;
-        }
+        VMKernel.memMap.updateEntry(oldPage);
         //tlb replacement
         processor.writeTLBEntry(tlbIdx, page);
     }
@@ -170,7 +165,7 @@ public class VMProcess extends UserProcess {
 
 //    protected void freeResources() {
 //        super.freeResources();
-//        VMKernel.InvertedPageTable.remove(processID);
+//        VMKernel.MemMap.remove(processID);
 //    }
 
     private static final int pageSize = Processor.pageSize;
