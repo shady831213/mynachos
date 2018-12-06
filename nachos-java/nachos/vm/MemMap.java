@@ -76,7 +76,7 @@ public class MemMap {
         allocator = new MemAllocator(pages);
     }
 
-    public Page allocPage() {
+    protected Page getFreePage() {
         Page page = allocator.getFreePage();
         if (page == null) {
             swap();
@@ -85,13 +85,8 @@ public class MemMap {
         return page;
     }
 
-    public void map(int processId, TranslationEntry entry) {
-        //Lib.assertTrue(!pages[entry.ppn].free);
-        pages[entry.ppn].map(processId, entry);
-    }
-
-    public void unmap(int Paddr) {
-        pages[Paddr].unmap();
+    public void unmap(int ppn) {
+        pages[ppn].unmap();
     }
 
     public void updateEntry(TranslationEntry entry) {
@@ -113,11 +108,13 @@ public class MemMap {
         }
     }
 
-    public void swapIn(int processId, TranslationEntry entry) {
-        if (!pages[entry.ppn].free) {
-            swapOut(entry.ppn);
+    public void map(int processId, TranslationEntry entry) {
+        boolean newEntry = entry.ppn < 0;
+        Page page = getFreePage();
+        Lib.assertTrue(page != null, "OOM!");
+        page.map(processId, entry);
+        if (!newEntry) {
+            System.arraycopy(swapDisc.read(processId, entry.vpn), 0, Machine.processor().getMemory(), Processor.pageSize * entry.ppn, Processor.pageSize);
         }
-        System.arraycopy(swapDisc.read(processId, entry.vpn), 0, Machine.processor().getMemory(), Processor.pageSize * entry.ppn, Processor.pageSize);
-        map(processId, entry);
     }
 }

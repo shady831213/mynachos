@@ -67,54 +67,31 @@ public class VMProcess extends UserProcess {
         super.unloadSections();
     }
 
-
-    protected int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
-                                          int length, byte[] memory) {
-        TranslationEntry page = translate(vaddr / pageSize);
-        if (page == null) {
-            return 0;
+    protected TranslationEntry getEntry(int vaddr) {
+        TranslationEntry entry = pageTable[vaddr];
+        if (entry == null) {
+            return entry;
         }
-        if (!page.valid) {
-            VMKernel.memMap.swapIn(processID, page);
-            invalidTLBEntry(page);
+        if (!entry.valid) {
+            VMKernel.memMap.map(processID, entry);
         }
-        int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
-        int amount = Math.min(length, pageSize - (vaddr % pageSize));
-        System.arraycopy(memory, paddrInPage, data, offset, amount);
-        return amount;
+        return entry;
     }
-
-    protected int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
-                                           int length, byte[] memory) {
-        TranslationEntry page = translate(vaddr / pageSize);
-        if (page == null || page.readOnly) {
-            return 0;
-        }
-        if (!page.valid) {
-            VMKernel.memMap.swapIn(processID, page);
-            invalidTLBEntry(page);
-        }
-        int paddrInPage = page.ppn * pageSize + vaddr % pageSize;
-        int amount = Math.min(length, pageSize - (vaddr % pageSize));
-        System.arraycopy(data, offset, memory, paddrInPage, amount);
-        return amount;
-    }
-
 
     protected void allocMemory(int vaddr, int length, boolean readOnly) {
         for (int i = 0; i < length; i++) {
-            Page page = VMKernel.memMap.allocPage();
-            Lib.assertTrue(page != null, "OOM!");
             pageTable[vaddr + i] = new TranslationEntry();
             pageTable[vaddr + i].readOnly = readOnly;
             pageTable[vaddr + i].vpn = vaddr + i;
-            page.map(processID, pageTable[vaddr + i]);
+            pageTable[vaddr + i].ppn = -1;
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
-            VMKernel.memMap.unmap(pageTable[vaddr + i].ppn);
+            if (pageTable[vaddr + i].ppn != -1) {
+                VMKernel.memMap.unmap(pageTable[vaddr + i].ppn);
+            }
             pageTable[vaddr + i] = null;
         }
     }
@@ -124,14 +101,11 @@ public class VMProcess extends UserProcess {
         Processor processor = Machine.processor();
         int vpn = processor.readRegister(Processor.regBadVAddr);
         Lib.debug(dbgVM, "vaddr = " + Lib.toHexString(vpn));
-        TranslationEntry page = translate(vpn / pageSize);
+        TranslationEntry page = getEntry(vpn / pageSize);
         Lib.debug(dbgVM, "vpn = " + page.vpn);
         Lib.debug(dbgVM, "ppn = " + page.ppn);
         Lib.debug(dbgVM, "valid = " + page.valid);
 
-        if (!page.valid) {
-            VMKernel.memMap.swapIn(processID, page);
-        }
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
         //update dirty and used bit

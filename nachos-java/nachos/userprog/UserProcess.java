@@ -181,7 +181,7 @@ public class UserProcess {
 
     protected int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
                                           int length, byte[] memory) {
-        TranslationEntry page = translate(vaddr / pageSize);
+        TranslationEntry page = getEntry(vaddr / pageSize);
         if (page == null) {
             return 0;
         }
@@ -253,7 +253,7 @@ public class UserProcess {
 
     protected int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
                                            int length, byte[] memory) {
-        TranslationEntry page = translate(vaddr / pageSize);
+        TranslationEntry page = getEntry(vaddr / pageSize);
         if (page == null || page.readOnly) {
             return 0;
         }
@@ -280,7 +280,7 @@ public class UserProcess {
         }
     }
 
-    protected TranslationEntry translate(int vaddr) {
+    protected TranslationEntry getEntry(int vaddr) {
         return pageTable[vaddr];
     }
 
@@ -358,7 +358,7 @@ public class UserProcess {
 
         this.argc = args.length;
         this.argv = entryOffset;
-        System.out.println("numPages is " + numPages + " page arg is " + entryOffset / pageSize + " ppn = " + translate(entryOffset / pageSize).ppn);
+        System.out.println("numPages is " + numPages + " page arg is " + entryOffset / pageSize + " ppn = " + getEntry(entryOffset / pageSize).ppn);
         for (int i = 0; i < argv.length; i++) {
             byte[] stringOffsetBytes = Lib.bytesFromInt(stringOffset);
             Lib.assertTrue(writeVirtualMemory(entryOffset, stringOffsetBytes) == 4);
@@ -410,7 +410,7 @@ public class UserProcess {
             allocMemory(section.getFirstVPN(), section.getLength(), section.isReadOnly());
 
             for (int i = 0; i < section.getLength(); i++) {
-                int ppn = translate(section.getFirstVPN() + i).ppn;
+                int ppn = getEntry(section.getFirstVPN() + i).ppn;
 
                 section.loadPage(i, ppn);
             }
