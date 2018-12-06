@@ -3,6 +3,7 @@ package nachos.vm;
 import nachos.machine.TranslationEntry;
 
 public abstract class AddressMapping {
+    final protected SwapBlockData swapDisc = SwapBlockData.getSwapBlockData();
     final TranslationEntry entry;
     protected Page page;
 
@@ -24,6 +25,7 @@ public abstract class AddressMapping {
         this.entry.used = entry.used;
         this.entry.dirty = entry.dirty;
     }
+
 
     abstract public void loadPageData();
 

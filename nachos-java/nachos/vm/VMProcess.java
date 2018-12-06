@@ -12,7 +12,7 @@ import java.util.Hashtable;
  */
 public class VMProcess extends UserProcess {
 
-    class CoffAddressMapping extends AddressMapping {
+    class CoffAddressMapping extends DataAddressMapping {
         final private CoffSection section;
         final private int spn;
 
@@ -23,26 +23,29 @@ public class VMProcess extends UserProcess {
         }
 
         public void loadPageData() {
-            section.loadPage(this.spn, page.ppn);
+            if (section.isReadOnly()) {
+                section.loadPage(this.spn, page.ppn);
+            } else {
+                super.loadPageData();
+            }
         }
 
         public void storedPageData() {
-            //nothing
+            if (!section.isReadOnly()) {
+                super.storedPageData();
+            }
         }
     }
 
     class DataAddressMapping extends AddressMapping {
-        final private SwapBlockData swapDisc = SwapBlockData.getSwapBlockData();
-        final private int processId;
 
-        DataAddressMapping(TranslationEntry entry, int processId) {
+        DataAddressMapping(TranslationEntry entry) {
             super(entry);
-            this.processId = processId;
         }
 
         public void loadPageData() {
-            if (swapDisc.exist(processId, entry.vpn)) {
-                System.arraycopy(swapDisc.read(processId, entry.vpn), 0, Machine.processor().getMemory(), Processor.pageSize * page.ppn, Processor.pageSize);
+            if (swapDisc.exist(processID, entry.vpn)) {
+                System.arraycopy(swapDisc.read(processID, entry.vpn), 0, Machine.processor().getMemory(), Processor.pageSize * page.ppn, Processor.pageSize);
             }
         }
 
@@ -50,7 +53,7 @@ public class VMProcess extends UserProcess {
             byte _data[];
             _data = new byte[Processor.pageSize];
             System.arraycopy(Machine.processor().getMemory(), Processor.pageSize * page.ppn, _data, 0, Processor.pageSize);
-            swapDisc.write(processId, entry.vpn, _data);
+            swapDisc.write(processID, entry.vpn, _data);
         }
     }
 
@@ -197,12 +200,14 @@ public class VMProcess extends UserProcess {
                     + " section (" + section.getLength() + " pages)");
             //alloc memory
             allocCoffSectionMemory(section);
-//            for (int i = 0; i < section.getLength(); i++) {
-//                AddressMapping mapping = getMapping(section.getFirstVPN()+i);
-//                VMKernel.memMap.map(mapping);
-//                mapping.loadPageData();
-//                mapping.entry.valid = true;
-//            }
+            if (section.isInitialzed()) {
+                for (int i = 0; i < section.getLength(); i++) {
+                    AddressMapping mapping = getMapping(section.getFirstVPN() + i);
+                    VMKernel.memMap.map(mapping);
+                    section.loadPage(i, mapping.entry.ppn);
+                    mapping.entry.valid = true;
+                }
+            }
         }
 
         return true;
@@ -262,7 +267,7 @@ public class VMProcess extends UserProcess {
             TranslationEntry entry = new TranslationEntry();
             entry.readOnly = readOnly;
             entry.vpn = vaddr + i;
-            mappingTable.put(vaddr + i, new DataAddressMapping(entry, processID));
+            mappingTable.put(vaddr + i, new DataAddressMapping(entry));
         }
     }
 
