@@ -9,6 +9,7 @@ import nachos.machine.*;
 public class Alarm {
     private Lock monitorLock = new Lock();
     private Condition2 monitorCon = new Condition2(monitorLock);
+    int runningCnt;
 
     /**
      * Allocate a new Alarm. Set the machine's timer interrupt handler to this
@@ -18,6 +19,7 @@ public class Alarm {
      * alarm.
      */
     public Alarm() {
+        runningCnt = 0;
         Machine.timer().setInterruptHandler(new Runnable() {
             public void run() {
                 timerInterrupt();
@@ -33,9 +35,11 @@ public class Alarm {
      */
     public void timerInterrupt() {
         KThread.currentThread().yield();
-        monitorLock.acquire();
-        monitorCon.wakeAll();
-        monitorLock.release();
+        if (runningCnt > 0) {
+            monitorLock.acquire();
+            monitorCon.wakeAll();
+            monitorLock.release();
+        }
     }
 
     /**
@@ -55,9 +59,11 @@ public class Alarm {
         // for now, cheat just to get something working (busy waiting is bad)
         long wakeTime = Machine.timer().getTime() + x;
         monitorLock.acquire();
+        runningCnt++;
         while (wakeTime > Machine.timer().getTime()) {
             monitorCon.sleep();
         }
+        runningCnt--;
         monitorLock.release();
     }
 }

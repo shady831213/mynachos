@@ -31,7 +31,12 @@ public class Lock {
      * this lock.
      */
     public void acquire() {
-        Lib.assertTrue(!isHeldByCurrentThread());
+        if (lockHolder != null && KThread.currentThread() != null) {
+            Lib.assertTrue(!isHeldByCurrentThread(), "lockHolder : " + lockHolder.getName() + " currentT : " + KThread.currentThread().getName());
+        } else {
+            Lib.assertTrue(!isHeldByCurrentThread());
+        }
+
 
         boolean intStatus = Machine.interrupt().disable();
         KThread thread = KThread.currentThread();
