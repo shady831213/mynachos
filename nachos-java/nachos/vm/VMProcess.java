@@ -1,19 +1,69 @@
 package nachos.vm;
 
 import nachos.machine.*;
+import nachos.threads.ThreadedKernel;
 import nachos.userprog.*;
+
+import java.io.EOFException;
+import java.util.Hashtable;
 
 /**
  * A <tt>UserProcess</tt> that supports demand-paging.
  */
 public class VMProcess extends UserProcess {
+
+    class CoffAddressMapping extends AddressMapping {
+        final private CoffSection section;
+        final private int spn;
+
+        CoffAddressMapping(TranslationEntry entry, CoffSection section, int spn) {
+            super(entry);
+            this.section = section;
+            this.spn = spn;
+        }
+
+        public void loadPageData() {
+            section.loadPage(this.spn, page.ppn);
+        }
+
+        public void storedPageData() {
+            //nothing
+        }
+    }
+
+    class DataAddressMapping extends AddressMapping {
+        final private SwapBlockData swapDisc = SwapBlockData.getSwapBlockData();
+        final private int processId;
+
+        DataAddressMapping(TranslationEntry entry, int processId) {
+            super(entry);
+            this.processId = processId;
+        }
+
+        public void loadPageData() {
+            if (swapDisc.exist(processId, entry.vpn)) {
+                System.arraycopy(swapDisc.read(processId, entry.vpn), 0, Machine.processor().getMemory(), Processor.pageSize * page.ppn, Processor.pageSize);
+            }
+        }
+
+        public void storedPageData() {
+            byte _data[];
+            _data = new byte[Processor.pageSize];
+            System.arraycopy(Machine.processor().getMemory(), Processor.pageSize * page.ppn, _data, 0, Processor.pageSize);
+            swapDisc.write(processId, entry.vpn, _data);
+        }
+    }
+
+    private Hashtable<Integer, AddressMapping> mappingTable;
+
     /**
      * Allocate a new process.
      */
     public VMProcess() {
         super();
-        //VMKernel.MemMap.put(processID, pageTable);
+        mappingTable = new Hashtable<>();
     }
+
 
     /**
      * Save the state of this process in preparation for a context switch.
@@ -41,10 +91,10 @@ public class VMProcess extends UserProcess {
         }
     }
 
-    private void invalidTLBEntry(TranslationEntry page) {
+    private void invalidTLBEntry(int vpn) {
         Processor processor = Machine.processor();
         for (int i = 0; i < processor.getTLBSize(); i++) {
-            if (processor.readTLBEntry(i).ppn == page.ppn) {
+            if (processor.readTLBEntry(i).vpn == vpn) {
                 processor.writeTLBEntry(i, new TranslationEntry());
             }
         }
@@ -56,8 +106,139 @@ public class VMProcess extends UserProcess {
      *
      * @return <tt>true</tt> if successful.
      */
+
+    protected boolean load(String name, String[] args) {
+        Lib.debug(dbgProcess, "UserProcess.load(\"" + name + "\")");
+
+        OpenFile executable = ThreadedKernel.fileSystem.open(name, false);
+        if (executable == null) {
+            Lib.debug(dbgProcess, "\topen failed");
+            return false;
+        }
+
+        try {
+            coff = new Coff(executable);
+        } catch (EOFException e) {
+            executable.close();
+            Lib.debug(dbgProcess, "\tcoff load failed");
+            return false;
+        }
+
+        // make sure the sections are contiguous and start at page 0
+        numPages = 0;
+        for (int s = 0; s < coff.getNumSections(); s++) {
+            CoffSection section = coff.getSection(s);
+            if (section.getFirstVPN() != numPages) {
+                coff.close();
+                Lib.debug(dbgProcess, "\tfragmented executable");
+                return false;
+            }
+            numPages += section.getLength();
+        }
+
+        // make sure the argv array will fit in one page
+        byte[][] argv = new byte[args.length][];
+        int argsSize = 0;
+        for (int i = 0; i < args.length; i++) {
+            argv[i] = args[i].getBytes();
+            // 4 bytes for argv[] pointer; then string plus one for null byte
+            argsSize += 4 + argv[i].length + 1;
+        }
+        if (argsSize > pageSize) {
+            coff.close();
+            Lib.debug(dbgProcess, "\targuments too long");
+            return false;
+        }
+
+        // program counter initially points at the program entry point
+        initialPC = coff.getEntryPoint();
+
+        // next comes the stack; stack pointer initially points to top of it
+        allocDataMemory(numPages, stackPages, false);
+
+        numPages += stackPages;
+        initialSP = numPages * pageSize;
+
+        // and finally reserve 1 page for arguments
+        allocDataMemory(numPages, 1, false);
+        numPages++;
+
+        if (!loadSections())
+            return false;
+
+        // store arguments in last page
+        int entryOffset = (numPages - 1) * pageSize;
+        int stringOffset = entryOffset + args.length * 4;
+
+        this.argc = args.length;
+        this.argv = entryOffset;
+        System.out.println("numPages is " + numPages + " page arg is " + entryOffset / pageSize);
+        for (int i = 0; i < argv.length; i++) {
+            byte[] stringOffsetBytes = Lib.bytesFromInt(stringOffset);
+            Lib.assertTrue(writeVirtualMemory(entryOffset, stringOffsetBytes) == 4);
+            entryOffset += 4;
+            Lib.assertTrue(writeVirtualMemory(stringOffset, argv[i]) ==
+                    argv[i].length);
+            stringOffset += argv[i].length;
+            Lib.assertTrue(writeVirtualMemory(stringOffset, new byte[]{0}) == 1);
+            stringOffset += 1;
+        }
+
+
+        return true;
+    }
+
     protected boolean loadSections() {
-        return super.loadSections();
+        // load sections
+        for (int s = 0; s < coff.getNumSections(); s++) {
+            CoffSection section = coff.getSection(s);
+
+            Lib.debug(dbgProcess, "\tinitializing " + section.getName()
+                    + " section (" + section.getLength() + " pages)");
+            //alloc memory
+            allocCoffSectionMemory(section);
+            for (int i = 0; i < section.getLength(); i++) {
+                AddressMapping mapping = getMapping(section.getFirstVPN()+i);
+                VMKernel.memMap.map(mapping);
+                mapping.loadPageData();
+                mapping.entry.valid = true;
+            }
+        }
+
+        return true;
+    }
+
+    protected int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                          int length, byte[] memory) {
+        AddressMapping mapping = getMapping(vaddr / pageSize);
+        if (!mapping.entry.valid) {
+            VMKernel.memMap.map(mapping);
+            mapping.loadPageData();
+            mapping.entry.valid = true;
+            invalidTLBEntry(vaddr / pageSize);
+        }
+
+
+        int paddrInPage = mapping.entry.ppn * pageSize + vaddr % pageSize;
+        int amount = Math.min(length, pageSize - (vaddr % pageSize));
+        System.arraycopy(memory, paddrInPage, data, offset, amount);
+        return amount;
+    }
+
+    protected int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                           int length, byte[] memory) {
+        AddressMapping mapping = getMapping(vaddr / pageSize);
+        if (!mapping.entry.valid) {
+            VMKernel.memMap.map(mapping);
+            mapping.loadPageData();
+            mapping.entry.valid = true;
+            invalidTLBEntry(vaddr / pageSize);
+        }
+
+        int paddrInPage = mapping.entry.ppn * pageSize + vaddr % pageSize;
+        int amount = Math.min(length, pageSize - (vaddr % pageSize));
+        System.arraycopy(data, offset, memory, paddrInPage, amount);
+        return amount;
     }
 
     /**
@@ -67,33 +248,36 @@ public class VMProcess extends UserProcess {
         super.unloadSections();
     }
 
-    protected TranslationEntry getEntry(int vaddr) {
-        TranslationEntry entry = pageTable[vaddr];
-        if (entry == null) {
-            return entry;
+    protected void allocCoffSectionMemory(CoffSection section) {
+        for (int i = 0; i < section.getLength(); i++) {
+            TranslationEntry entry = new TranslationEntry();
+            entry.readOnly = section.isReadOnly();
+            entry.vpn = section.getFirstVPN() + i;
+            mappingTable.put(section.getFirstVPN() + i, new CoffAddressMapping(entry, section, i));
         }
-        if (!entry.valid) {
-            VMKernel.memMap.map(processID, entry);
-        }
-        return entry;
     }
 
-    protected void allocMemory(int vaddr, int length, boolean readOnly) {
+    protected void allocDataMemory(int vaddr, int length, boolean readOnly) {
         for (int i = 0; i < length; i++) {
-            pageTable[vaddr + i] = new TranslationEntry();
-            pageTable[vaddr + i].readOnly = readOnly;
-            pageTable[vaddr + i].vpn = vaddr + i;
-            pageTable[vaddr + i].ppn = -1;
+            TranslationEntry entry = new TranslationEntry();
+            entry.readOnly = readOnly;
+            entry.vpn = vaddr + i;
+            mappingTable.put(vaddr + i, new DataAddressMapping(entry, processID));
         }
     }
 
     protected void freeMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
-            if (pageTable[vaddr + i].ppn != -1) {
-                VMKernel.memMap.unmap(pageTable[vaddr + i].ppn);
+            AddressMapping mapping = getMapping(vaddr + i);
+            if (mapping.entry.valid) {
+                mapping.page.unmap();
             }
-            pageTable[vaddr + i] = null;
+            mappingTable.remove(vaddr + i);
         }
+    }
+
+    protected AddressMapping getMapping(int vaddr) {
+        return mappingTable.get(vaddr);
     }
 
     private void handleTlbMiss() {
@@ -101,18 +285,23 @@ public class VMProcess extends UserProcess {
         Processor processor = Machine.processor();
         int vpn = processor.readRegister(Processor.regBadVAddr);
         Lib.debug(dbgVM, "vaddr = " + Lib.toHexString(vpn));
-        TranslationEntry page = getEntry(vpn / pageSize);
-        Lib.debug(dbgVM, "vpn = " + page.vpn);
-        Lib.debug(dbgVM, "ppn = " + page.ppn);
-        Lib.debug(dbgVM, "valid = " + page.valid);
+        AddressMapping mapping = getMapping(vpn / pageSize);
+        if (!mapping.entry.valid) {
+            VMKernel.memMap.map(mapping);
+            mapping.loadPageData();
+            mapping.entry.valid = true;
+        }
+        Lib.debug(dbgVM, "vpn = " + mapping.entry.vpn);
+        Lib.debug(dbgVM, "ppn = " + mapping.entry.ppn);
+        Lib.debug(dbgVM, "valid = " + mapping.entry.valid);
 
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
         //update dirty and used bit
         TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
-        VMKernel.memMap.updateEntry(oldPage);
+        VMKernel.memMap.getPage(oldPage.ppn).updateEntryHW(oldPage);
         //tlb replacement
-        processor.writeTLBEntry(tlbIdx, page);
+        processor.writeTLBEntry(tlbIdx, mapping.entry);
     }
 
     /**

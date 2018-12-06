@@ -1,11 +1,9 @@
 package nachos.vm;
 
-import nachos.machine.Lib;
 import nachos.machine.TranslationEntry;
 
 public class Page {
-    int processId;
-    TranslationEntry mappingEntry;
+    AddressMapping mappingEntry;
     boolean free;
     final int ppn;
 
@@ -14,22 +12,26 @@ public class Page {
         this.ppn = ppn;
     }
 
-    public void map(int processId, TranslationEntry entry) {
+    public void map(AddressMapping mappingEntry) {
         free = false;
-        this.processId = processId;
-        this.mappingEntry = entry;
-        entry.valid = true;
-        entry.ppn = ppn;
+        this.mappingEntry = mappingEntry;
+        mappingEntry.map(this);
     }
 
     public void unmap() {
+        mappingEntry.unmap();
         free = true;
     }
 
-    public void updateEntry(TranslationEntry entry) {
+    public void updateEntryHW(TranslationEntry entry) {
         if (!free) {
-            mappingEntry.dirty = entry.dirty;
-            mappingEntry.used = entry.used;
+            mappingEntry.updateEntryHW(entry);
         }
     }
+
+    public void swapOut() {
+        mappingEntry.storedPageData();
+        mappingEntry.entry.valid = false;
+    }
+
 }

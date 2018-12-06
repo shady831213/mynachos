@@ -294,7 +294,7 @@ public class UserProcess {
      * @param args the arguments to pass to the executable.
      * @return <tt>true</tt> if the executable was successfully loaded.
      */
-    private boolean load(String name, String[] args) {
+    protected boolean load(String name, String[] args) {
         Lib.debug(dbgProcess, "UserProcess.load(\"" + name + "\")");
 
         OpenFile executable = ThreadedKernel.fileSystem.open(name, false);
@@ -764,8 +764,8 @@ public class UserProcess {
 
     protected final int maxFiles = 14;
 
-    private int initialPC, initialSP;
-    private int argc, argv;
+    protected int initialPC, initialSP;
+    protected int argc, argv;
 
     private static final int pageSize = Processor.pageSize;
     private static final char dbgProcess = 'a';
