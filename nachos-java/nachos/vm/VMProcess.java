@@ -197,12 +197,12 @@ public class VMProcess extends UserProcess {
                     + " section (" + section.getLength() + " pages)");
             //alloc memory
             allocCoffSectionMemory(section);
-            for (int i = 0; i < section.getLength(); i++) {
-                AddressMapping mapping = getMapping(section.getFirstVPN()+i);
-                VMKernel.memMap.map(mapping);
-                mapping.loadPageData();
-                mapping.entry.valid = true;
-            }
+//            for (int i = 0; i < section.getLength(); i++) {
+//                AddressMapping mapping = getMapping(section.getFirstVPN()+i);
+//                VMKernel.memMap.map(mapping);
+//                mapping.loadPageData();
+//                mapping.entry.valid = true;
+//            }
         }
 
         return true;
