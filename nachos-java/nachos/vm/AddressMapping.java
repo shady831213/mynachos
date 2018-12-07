@@ -7,6 +7,12 @@ public abstract class AddressMapping {
     final TranslationEntry entry;
     protected Page page;
 
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    protected boolean readOnly;
+
     AddressMapping(TranslationEntry entry) {
         this.entry = entry;
     }

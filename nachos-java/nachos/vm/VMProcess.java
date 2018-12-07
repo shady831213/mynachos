@@ -12,7 +12,7 @@ import java.util.Hashtable;
  */
 public class VMProcess extends UserProcess {
 
-    class CoffAddressMapping extends DataAddressMapping {
+    class CoffAddressMapping extends AddressMapping {
         final private CoffSection section;
         final private int spn;
 
@@ -20,20 +20,17 @@ public class VMProcess extends UserProcess {
             super(entry);
             this.section = section;
             this.spn = spn;
+            this.readOnly = section.isReadOnly();
         }
 
         public void loadPageData() {
             if (section.isReadOnly()) {
                 section.loadPage(this.spn, page.ppn);
-            } else {
-                super.loadPageData();
             }
         }
 
         public void storedPageData() {
-            if (!section.isReadOnly()) {
-                super.storedPageData();
-            }
+            //nothing
         }
     }
 
@@ -41,6 +38,7 @@ public class VMProcess extends UserProcess {
 
         DataAddressMapping(TranslationEntry entry) {
             super(entry);
+            this.readOnly = false;
         }
 
         public void loadPageData() {
@@ -157,13 +155,13 @@ public class VMProcess extends UserProcess {
         initialPC = coff.getEntryPoint();
 
         // next comes the stack; stack pointer initially points to top of it
-        allocDataMemory(numPages, stackPages, false);
+        allocDataMemory(numPages, stackPages);
 
         numPages += stackPages;
         initialSP = numPages * pageSize;
 
         // and finally reserve 1 page for arguments
-        allocDataMemory(numPages, 1, false);
+        allocDataMemory(numPages, 1);
         numPages++;
 
         if (!loadSections())
@@ -256,16 +254,16 @@ public class VMProcess extends UserProcess {
     protected void allocCoffSectionMemory(CoffSection section) {
         for (int i = 0; i < section.getLength(); i++) {
             TranslationEntry entry = new TranslationEntry();
-            entry.readOnly = section.isReadOnly();
+            entry.readOnly = true;
             entry.vpn = section.getFirstVPN() + i;
             mappingTable.put(section.getFirstVPN() + i, new CoffAddressMapping(entry, section, i));
         }
     }
 
-    protected void allocDataMemory(int vaddr, int length, boolean readOnly) {
+    protected void allocDataMemory(int vaddr, int length) {
         for (int i = 0; i < length; i++) {
             TranslationEntry entry = new TranslationEntry();
-            entry.readOnly = readOnly;
+            entry.readOnly = true;
             entry.vpn = vaddr + i;
             mappingTable.put(vaddr + i, new DataAddressMapping(entry));
         }
@@ -309,6 +307,34 @@ public class VMProcess extends UserProcess {
         processor.writeTLBEntry(tlbIdx, mapping.entry);
     }
 
+
+    private void handleReadOnly() {
+        Lib.debug(dbgVM, "handleReadOnly!");
+        Processor processor = Machine.processor();
+        int vpn = processor.readRegister(Processor.regBadVAddr);
+        Lib.debug(dbgVM, "vaddr = " + Lib.toHexString(vpn));
+        AddressMapping mapping = getMapping(vpn / pageSize);
+        //remap on copy
+        if (!mapping.isReadOnly()) {
+            DataAddressMapping newMapping = new DataAddressMapping(mapping.entry);
+            mapping.page.map(newMapping);
+            newMapping.entry.readOnly = false;
+            mappingTable.put(vpn / pageSize, newMapping);
+            invalidTLBEntry(vpn / pageSize);
+        }
+        Lib.debug(dbgVM, "vpn = " + mapping.entry.vpn);
+        Lib.debug(dbgVM, "ppn = " + mapping.entry.ppn);
+        Lib.debug(dbgVM, "valid = " + mapping.entry.valid);
+
+        //ranodomly update tlb
+        int tlbIdx = Lib.random(processor.getTLBSize());
+        //update dirty and used bit
+        TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
+        VMKernel.memMap.getPage(oldPage.ppn).updateEntryHW(oldPage);
+        //tlb replacement
+        processor.writeTLBEntry(tlbIdx, mapping.entry);
+    }
+
     /**
      * Handle a user exception. Called by
      * <tt>UserKernel.exceptionHandler()</tt>. The
@@ -323,6 +349,9 @@ public class VMProcess extends UserProcess {
         switch (cause) {
             case Processor.exceptionTLBMiss:
                 handleTlbMiss();
+                break;
+            case Processor.exceptionReadOnly:
+                handleReadOnly();
                 break;
             default:
                 super.handleException(cause);
