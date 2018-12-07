@@ -37,7 +37,6 @@ public class StubFileSystem implements FileSystem {
         try {
             return new StubOpenFile(name, truncate);
         } catch (IOException e) {
-            System.out.println(e);
             return null;
         }
     }
@@ -92,7 +91,6 @@ public class StubFileSystem implements FileSystem {
             });
 
             if (file == null) {
-                System.out.println("file " + name + " is null!");
                 throw new IOException();
             }
 
