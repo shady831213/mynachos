@@ -63,12 +63,13 @@ public class UserProcess {
      * @return <tt>true</tt> if the program was successfully executed.
      */
     public boolean execute(String name, String[] args) {
-        if (!load(name, args))
-            return false;
-
         UThread thread = new UThread(this);
-        thread.setName(name).fork();
         rootThread = thread;
+        if (!load(name, args)) {
+            System.out.println("load " + name + " with " + args.length + " args fail!");
+            return false;
+        }
+        thread.setName(name).fork();
         return true;
     }
 
@@ -428,6 +429,7 @@ public class UserProcess {
             //alloc memory
             freeMemory(section.getFirstVPN(), section.getLength());
         }
+        coff.close();
     }
 
     /**
@@ -463,10 +465,12 @@ public class UserProcess {
         openedFiles.clear();
     }
 
-    private UserProcess createSubProcess() {
-        UserProcess process = newUserProcess();
+    protected UserProcess createSubProcess() {
+        return new UserProcess();
+    }
+
+    private void addSubProcess(UserProcess process) {
         subProcess.put(process.processID, process);
-        return process;
     }
 
     /**
@@ -516,6 +520,7 @@ public class UserProcess {
             Lib.debug(dbgProcess, "args " + i + " is " + args[i]);
         }
         UserProcess process = createSubProcess();
+        addSubProcess(process);
         process.execute(filename, args);
         return process.processID;
     }
@@ -855,7 +860,7 @@ public class UserProcess {
 
     static int processCnt = 0;
 
-    private HashMap<Integer, UserProcess> subProcess = new HashMap<>();
+    protected HashMap<Integer, UserProcess> subProcess = new HashMap<>();
 
     private UThread rootThread;
 

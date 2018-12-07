@@ -100,7 +100,9 @@ public class VMProcess extends UserProcess {
         mappingTable = new Hashtable<>();
     }
 
-
+    protected UserProcess createSubProcess() {
+        return new VMProcess();
+    }
     /**
      * Save the state of this process in preparation for a context switch.
      * Called by <tt>UThread.saveState()</tt>.

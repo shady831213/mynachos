@@ -17,9 +17,9 @@ public class StubFileSystem implements FileSystem {
     /**
      * Allocate a new stub file system.
      *
-     * @param    privilege encapsulates privileged access to the Nachos
-     * machine.
-     * @param    directory    the root directory of the stub file system.
+     * @param privilege encapsulates privileged access to the Nachos
+     *                  machine.
+     * @param directory the root directory of the stub file system.
      */
     public StubFileSystem(Privilege privilege, File directory) {
         this.privilege = privilege;
@@ -27,14 +27,17 @@ public class StubFileSystem implements FileSystem {
     }
 
     public OpenFile open(String name, boolean truncate) {
-        if (!checkName(name))
+        if (!checkName(name)) {
+            System.out.println("checkName fail!");
             return null;
+        }
 
         delay();
 
         try {
             return new StubOpenFile(name, truncate);
         } catch (IOException e) {
+            System.out.println(e);
             return null;
         }
     }
@@ -77,8 +80,10 @@ public class StubFileSystem implements FileSystem {
 
             final File f = new File(directory, name);
 
-            if (openCount == maxOpenFiles)
+            if (openCount == maxOpenFiles) {
+                System.out.println("openCount reach max " + maxOpenFiles);
                 throw new IOException();
+            }
 
             privilege.doPrivileged(new Runnable() {
                 public void run() {
@@ -86,8 +91,10 @@ public class StubFileSystem implements FileSystem {
                 }
             });
 
-            if (file == null)
+            if (file == null) {
+                System.out.println("file " + name + " is null!");
                 throw new IOException();
+            }
 
             open = true;
             openCount++;
