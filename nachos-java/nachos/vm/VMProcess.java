@@ -317,7 +317,7 @@ public class VMProcess extends UserProcess {
         //remap on copy
         if (!mapping.isReadOnly()) {
             DataAddressMapping newMapping = new DataAddressMapping(mapping.entry);
-            mapping.page.map(newMapping);
+            VMKernel.memMap.getPage(mapping.page.ppn).map(newMapping);
             newMapping.entry.readOnly = false;
             mappingTable.put(vpn / pageSize, newMapping);
             invalidTLBEntry(vpn / pageSize);
