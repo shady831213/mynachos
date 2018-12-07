@@ -159,9 +159,12 @@ void runline(char* line) {
 	    }
 	}
 	else {
+	    int j;
 	    strcpy(prog, argv[0]);
 	    strcat(prog, ".coff");
-
+        for (j = 0; j < argc; j++) {
+        	printf("arg %d = %s\n", j, argv[j]);
+        }
 	    pid = exec(prog, argc, argv);
 	    if (pid == -1) {
 		printf("%s: exec failed.\n", argv[0]);

@@ -28,12 +28,23 @@ public abstract class AddressMapping {
     }
 
     public void updateEntryHW(TranslationEntry entry) {
-        this.entry.used = entry.used;
-        this.entry.dirty = entry.dirty;
+        //hardware set only
+        if (entry.used) {
+            this.entry.used = entry.used;
+        }
+        if (entry.dirty) {
+            this.entry.dirty = entry.dirty;
+        }
     }
 
 
     abstract public void loadPageData();
 
     abstract public void storedPageData();
+
+    abstract public int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                                int length);
+
+    abstract public int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                                 int length);
 }

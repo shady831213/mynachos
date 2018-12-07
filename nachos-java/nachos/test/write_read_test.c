@@ -16,6 +16,10 @@ int main(int argc, char** argv)
     src_buf[i] = i % 97;
   }
 
+  for (i = 0; i < argc; i++) {
+     printf("in write_read_test : arg %d = %s\n", i, argv[i]);
+  }
+
   if (argc!=3) {
     printf("Usage: write_read <src> <dst>\n");
     return 1;

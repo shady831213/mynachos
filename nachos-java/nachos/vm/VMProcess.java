@@ -24,13 +24,24 @@ public class VMProcess extends UserProcess {
         }
 
         public void loadPageData() {
-            if (section.isReadOnly()) {
-                section.loadPage(this.spn, page.ppn);
-            }
+            section.loadPage(this.spn, page.ppn);
         }
 
         public void storedPageData() {
-            //nothing
+            Lib.assertNotReached("not allow write!");
+        }
+
+        public int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                           int length) {
+            int amount = Math.min(length, pageSize - (vaddr % pageSize));
+            System.arraycopy(section.loadPage(this.spn), vaddr % pageSize, data, offset, amount);
+            return amount;
+        }
+
+        public int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                            int length) {
+            Lib.assertNotReached("not allow write!");
+            return 0;
         }
     }
 
@@ -52,6 +63,30 @@ public class VMProcess extends UserProcess {
             _data = new byte[Processor.pageSize];
             System.arraycopy(Machine.processor().getMemory(), Processor.pageSize * page.ppn, _data, 0, Processor.pageSize);
             swapDisc.write(processID, entry.vpn, _data);
+        }
+
+        public int readVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                           int length) {
+            if (swapDisc.exist(processID, vaddr / pageSize)) {
+                int amount = Math.min(length, pageSize - (vaddr % pageSize));
+                System.arraycopy(swapDisc.read(processID, vaddr / pageSize), vaddr % pageSize, data, offset, amount);
+                return amount;
+            }
+            return 0;
+        }
+
+        public int writeVirtualMemoryInPage(int vaddr, byte[] data, int offset,
+                                            int length) {
+            byte _data[];
+            if (swapDisc.exist(processID, entry.vpn)) {
+                _data = swapDisc.read(processID, vaddr / pageSize);
+            } else {
+                _data = new byte[Processor.pageSize];
+            }
+            int amount = Math.min(length, pageSize - (vaddr % pageSize));
+            System.arraycopy(data, offset, _data, vaddr % pageSize, amount);
+            swapDisc.write(processID, vaddr / pageSize, _data);
+            return amount;
         }
     }
 
@@ -95,8 +130,10 @@ public class VMProcess extends UserProcess {
     private void invalidTLBEntry(int vpn) {
         Processor processor = Machine.processor();
         for (int i = 0; i < processor.getTLBSize(); i++) {
-            if (processor.readTLBEntry(i).vpn == vpn) {
-                processor.writeTLBEntry(i, new TranslationEntry());
+            TranslationEntry entry = processor.readTLBEntry(i);
+            if (entry.vpn == vpn) {
+                entry.valid = false;
+                processor.writeTLBEntry(i, entry);
             }
         }
     }
@@ -173,7 +210,7 @@ public class VMProcess extends UserProcess {
 
         this.argc = args.length;
         this.argv = entryOffset;
-        System.out.println("numPages is " + numPages + " page arg is " + entryOffset / pageSize);
+        Lib.debug(dbgProcess, "numPages is " + numPages + " page arg is " + entryOffset / pageSize);
         for (int i = 0; i < argv.length; i++) {
             byte[] stringOffsetBytes = Lib.bytesFromInt(stringOffset);
             Lib.assertTrue(writeVirtualMemory(entryOffset, stringOffsetBytes) == 4);
@@ -198,14 +235,14 @@ public class VMProcess extends UserProcess {
                     + " section (" + section.getLength() + " pages)");
             //alloc memory
             allocCoffSectionMemory(section);
-            if (section.isInitialzed()) {
-                for (int i = 0; i < section.getLength(); i++) {
-                    AddressMapping mapping = getMapping(section.getFirstVPN() + i);
-                    VMKernel.memMap.map(mapping);
-                    section.loadPage(i, mapping.entry.ppn);
-                    mapping.entry.valid = true;
-                }
-            }
+//            if (section.isInitialzed()) {
+//                for (int i = 0; i < section.getLength(); i++) {
+//                    AddressMapping mapping = getMapping(section.getFirstVPN() + i);
+//                    VMKernel.memMap.map(mapping);
+//                    section.loadPage(i, mapping.entry.ppn);
+//                    mapping.entry.valid = true;
+//                }
+//            }
         }
 
         return true;
@@ -215,10 +252,7 @@ public class VMProcess extends UserProcess {
                                           int length, byte[] memory) {
         AddressMapping mapping = getMapping(vaddr / pageSize);
         if (!mapping.entry.valid) {
-            VMKernel.memMap.map(mapping);
-            mapping.loadPageData();
-            mapping.entry.valid = true;
-            invalidTLBEntry(vaddr / pageSize);
+            return mapping.readVirtualMemoryInPage(vaddr, data, offset, length);
         }
 
 
@@ -232,10 +266,13 @@ public class VMProcess extends UserProcess {
                                            int length, byte[] memory) {
         AddressMapping mapping = getMapping(vaddr / pageSize);
         if (!mapping.entry.valid) {
-            VMKernel.memMap.map(mapping);
-            mapping.loadPageData();
-            mapping.entry.valid = true;
-            invalidTLBEntry(vaddr / pageSize);
+            if (!mapping.isReadOnly()) {
+                DataAddressMapping newMapping = new DataAddressMapping(mapping.entry);
+                newMapping.entry.readOnly = false;
+                mappingTable.put(vaddr / pageSize, newMapping);
+                return newMapping.writeVirtualMemoryInPage(vaddr, data, offset, length);
+            }
+            return mapping.writeVirtualMemoryInPage(vaddr, data, offset, length);
         }
 
         int paddrInPage = mapping.entry.ppn * pageSize + vaddr % pageSize;
@@ -273,7 +310,7 @@ public class VMProcess extends UserProcess {
         for (int i = 0; i < length; i++) {
             AddressMapping mapping = getMapping(vaddr + i);
             if (mapping.entry.valid) {
-                mapping.page.unmap();
+                VMKernel.memMap.getPage(mapping.entry.ppn).unmap();
             }
             mappingTable.remove(vaddr + i);
         }
@@ -283,9 +320,30 @@ public class VMProcess extends UserProcess {
         return mappingTable.get(vaddr);
     }
 
+    private void updateTLBHW() {
+        Processor processor = Machine.processor();
+        for (int i = 0; i < processor.getTLBSize(); i++) {
+            TranslationEntry oldPage = processor.readTLBEntry(i);
+            if (oldPage.used || oldPage.dirty) {
+                Lib.debug(dbgVM, "update used and dirty!");
+                Lib.debug(dbgVM, "vpn = " + oldPage.vpn);
+                Lib.debug(dbgVM, "ppn = " + oldPage.ppn);
+                Lib.debug(dbgVM, "dirty = " + oldPage.dirty);
+                Lib.debug(dbgVM, "used = " + oldPage.used);
+                getMapping(oldPage.vpn).updateEntryHW(oldPage);
+                oldPage.used = false;
+                oldPage.dirty = false;
+                processor.writeTLBEntry(i, oldPage);
+            }
+        }
+    }
+
     private void handleTlbMiss() {
         Lib.debug(dbgVM, "handleTlbMiss!");
         Processor processor = Machine.processor();
+        //update tlb by hardware
+        //update dirty and used bit
+
         int vpn = processor.readRegister(Processor.regBadVAddr);
         Lib.debug(dbgVM, "vaddr = " + Lib.toHexString(vpn));
         AddressMapping mapping = getMapping(vpn / pageSize);
@@ -300,9 +358,7 @@ public class VMProcess extends UserProcess {
 
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
-        //update dirty and used bit
-        TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
-        VMKernel.memMap.getPage(oldPage.ppn).updateEntryHW(oldPage);
+
         //tlb replacement
         processor.writeTLBEntry(tlbIdx, mapping.entry);
     }
@@ -319,6 +375,7 @@ public class VMProcess extends UserProcess {
             DataAddressMapping newMapping = new DataAddressMapping(mapping.entry);
             VMKernel.memMap.getPage(mapping.page.ppn).map(newMapping);
             newMapping.entry.readOnly = false;
+            newMapping.entry.dirty = true;
             mappingTable.put(vpn / pageSize, newMapping);
             invalidTLBEntry(vpn / pageSize);
         }
@@ -328,9 +385,6 @@ public class VMProcess extends UserProcess {
 
         //ranodomly update tlb
         int tlbIdx = Lib.random(processor.getTLBSize());
-        //update dirty and used bit
-        TranslationEntry oldPage = processor.readTLBEntry(tlbIdx);
-        VMKernel.memMap.getPage(oldPage.ppn).updateEntryHW(oldPage);
         //tlb replacement
         processor.writeTLBEntry(tlbIdx, mapping.entry);
     }
@@ -345,7 +399,7 @@ public class VMProcess extends UserProcess {
      */
     public void handleException(int cause) {
         Processor processor = Machine.processor();
-
+        updateTLBHW();
         switch (cause) {
             case Processor.exceptionTLBMiss:
                 handleTlbMiss();

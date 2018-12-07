@@ -506,9 +506,12 @@ public class UserProcess {
         String filename = readVirtualMemoryString(fileVaddr, maxFileNameLen);
         Lib.debug(dbgProcess, "exec filename :" + filename + "!");
         String[] args = new String[argc];
-        int offset = argc * 4;
+        byte[] vaddrData = new byte[4];
+        readVirtualMemory(argv, vaddrData, 0, 4);
+        int vaddr = Lib.bytesToInt(vaddrData, 0);
+        int offset = 0;
         for (int i = 0; i < argc; i++) {
-            args[i] = readVirtualMemoryString(argv + offset, maxFileNameLen);
+            args[i] = readVirtualMemoryString(vaddr + offset, maxFileNameLen);
             offset += args[i].getBytes().length + 1;
             Lib.debug(dbgProcess, "args " + i + " is " + args[i]);
         }

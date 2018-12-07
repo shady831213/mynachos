@@ -23,12 +23,6 @@ public class Page {
         free = true;
     }
 
-    public void updateEntryHW(TranslationEntry entry) {
-        if (!free) {
-            mappingEntry.updateEntryHW(entry);
-        }
-    }
-
     public void swapOut() {
         mappingEntry.storedPageData();
         mappingEntry.entry.valid = false;

@@ -201,6 +201,34 @@ public class CoffSection {
         Arrays.fill(memory, paddr + initlen, paddr + pageSize, (byte) 0);
     }
 
+    public byte[] loadPage(int spn) {
+        Lib.assertTrue(file != null);
+
+        Lib.assertTrue(spn >= 0 && spn < numPages);
+
+        int pageSize = Processor.pageSize;
+        int faddr = contentOffset + spn * pageSize;
+        int initlen;
+
+        if (!initialized)
+            initlen = 0;
+        else if (spn == numPages - 1)
+        /** initlen = size % pageSize;
+         *  Bug identified by Steven Schlansker 3/20/08
+         *  Bug fix by Michael Rauser
+         */
+            initlen = (size == pageSize) ? pageSize : (size % pageSize);
+        else
+            initlen = pageSize;
+
+        byte[] data = new byte[pageSize];
+        if (initlen > 0)
+            Lib.strictReadFile(file, faddr, data, 0, initlen);
+
+        Arrays.fill(data, initlen, pageSize, (byte) 0);
+        return data;
+    }
+
     /**
      * The COFF object to which this section belongs.
      */
