@@ -165,32 +165,26 @@ public abstract class Socket {
                 sendingListNotFull.sleep();
             }
             send(message);
-            sendingList.addFirst(message);
+            sendingList.add(message);
             watchDogEn.wake();
             sendingListLock.release();
+            new KThread(new Runnable() {
+                @Override
+                public void run() {
+                    timeout(message);
+                }
+            }).fork();
         }
     }
-
-    protected void retry() {
-        while (true) {
-            sendingListLock.acquire();
-            while (sendingList.isEmpty()) {
-                watchDogEn.sleep();
-            }
-            sendingListLock.release();
-            ThreadedKernel.alarm.waitUntil(sendingTimeout);
-            sendingListLock.acquire();
-            if (!sendingList.isEmpty()) {
-                while (!sendingList.isEmpty()) {
-                    sendInputList.addFirst(sendingList.removeFirst());
-                }
-                sendingTimeout = sendingTimeout + Stats.NetworkTime;
-                sendingListNotFull.wake();
-            } else {
-                sendingTimeout = sendingTimeout / 2;
-            }
-            sendingListLock.release();
+    //timeout kernal thread for every package, if ack is received, package should remove from sending list, then when timeout, nothing to do.
+    //otherwise, resend.
+    protected void timeout(SocketMessage message) {
+        ThreadedKernel.alarm.waitUntil(sendingTimeout);
+        sendingListLock.acquire();
+        if (sendingList.contains(message)) {
+            send(message);
         }
+        sendingListLock.release();
     }
 
     protected SocketMessage rec() throws MalformedPacketException {
