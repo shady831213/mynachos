@@ -177,12 +177,14 @@ public abstract class Socket {
         }
     }
     //timeout kernal thread for every package, if ack is received, package should remove from sending list, then when timeout, nothing to do.
-    //otherwise, resend.
+    //otherwise, move package from sending list to head of input list waiting for resend.
     protected void timeout(SocketMessage message) {
         ThreadedKernel.alarm.waitUntil(sendingTimeout);
         sendingListLock.acquire();
         if (sendingList.contains(message)) {
-            send(message);
+            sendInputList.addFirst(message);
+            sendingList.remove(message);
+            sendingListNotFull.wake();
         }
         sendingListLock.release();
     }
