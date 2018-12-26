@@ -1,7 +1,6 @@
 package nachos.network;
 
 import nachos.machine.Lib;
-import nachos.machine.Machine;
 import nachos.machine.MalformedPacketException;
 import nachos.machine.OpenFile;
 import nachos.threads.Condition2;
@@ -13,20 +12,20 @@ public class SocketServer extends Socket {
 
     public SocketServer(int srcPort) {
         super(srcPort);
-        waitAcc = new Condition2(lock);
+        waitAcc = new Condition2(stateLock);
     }
 
     public OpenFile accept() {
-        lock.acquire();
+        stateLock.acquire();
         while (this.state != SocketState.ESTABLISHED) {
             waitAcc.sleep();
         }
-        lock.release();
+        stateLock.release();
         return new File();
     }
 
     protected void handleClosed() {
-        lock.acquire();
+        stateLock.acquire();
         try {
             SocketMessage message = rec();
             dstLink = message.message.packet.srcLink;
@@ -40,7 +39,7 @@ public class SocketServer extends Socket {
         } catch (MalformedPacketException e) {
             Lib.assertNotReached("receive bad package!");
         }
-        lock.release();
+        stateLock.release();
     }
 
     protected void handleSynSent() {
@@ -48,7 +47,7 @@ public class SocketServer extends Socket {
     }
 
     protected void handleSynRcvd() {
-        lock.acquire();
+        stateLock.acquire();
         try {
             send(false, false, true, true, curSeqNo, new byte[0]);
         } catch (MalformedPacketException e) {
@@ -57,7 +56,7 @@ public class SocketServer extends Socket {
         }
         state = SocketState.ESTABLISHED;
         waitAcc.wake();
-        lock.release();
+        stateLock.release();
     }
 
     protected void handleEstablished() {
@@ -66,13 +65,7 @@ public class SocketServer extends Socket {
         }
     }
 
-    protected void handleStpSent() {
 
-    }
-
-    protected void handleStpRcvd() {
-
-    }
 
     protected void handleClosing() {
 

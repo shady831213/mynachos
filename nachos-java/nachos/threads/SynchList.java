@@ -78,6 +78,10 @@ public class SynchList {
         return o;
     }
 
+    public boolean isEmpty() {
+        return list.isEmpty();
+    }
+
     private static class PingTest implements Runnable {
         PingTest(SynchList ping, SynchList pong) {
             this.ping = ping;

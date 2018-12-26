@@ -23,12 +23,13 @@ public abstract class Socket {
     ;
 
     private static int dataWinSize = 16;
-    private int sendingTimeout;
+    private static int sendingTimeout = 20000;
+
     //state machine
 
-    protected Lock lock;
+    protected Lock stateLock;
     protected SocketState state;
-
+    private Condition2 waitClose;
     //state vars
     protected int srcPort;
     protected int srcLink;
@@ -39,35 +40,44 @@ public abstract class Socket {
 
     //for receive
     protected int curRecSeqNo;
-    SynchList recInOrderList;
+    protected int stpSeqNo;
+    Lock recListLock;
+    Condition2 recBusy;
+    LinkedList<SocketMessage> recInOrderList;
     PriorityQueue<SocketMessage> recOutOfOrderList;
 
     //for send
     protected int curSendSeqNo;
-    SynchList sendInputList;
+    LinkedList<SocketMessage> sendInputList;
     Lock sendingListLock;
     Condition2 watchDogEn;
     Condition2 sendingListNotFull;
+    Condition2 sendingListNotEmpty;
+    Condition2 sendingBusy;
     LinkedList<SocketMessage> sendingList;
 
     public Socket(int srcPort) {
         this.srcPort = srcPort;
         this.srcLink = Machine.networkLink().getLinkAddress();
         this.state = SocketState.CLOSED;
-        lock = new Lock();
+        stateLock = new Lock();
+        waitClose = new Condition2(stateLock);
         recOutOfOrderList = new PriorityQueue<>(dataWinSize, new Comparator<SocketMessage>() {
             @Override
             public int compare(SocketMessage t1, SocketMessage t2) {
                 return t1.seqNo - t2.seqNo;
             }
         });
-        recInOrderList = new SynchList();
-        sendInputList = new SynchList();
+        recInOrderList = new LinkedList<>();
+        recListLock = new Lock();
+        recBusy = new Condition2(recListLock);
+        sendInputList = new LinkedList<>();
         sendingList = new LinkedList<>();
         sendingListLock = new Lock();
         watchDogEn = new Condition2(sendingListLock);
         sendingListNotFull = new Condition2(sendingListLock);
-        sendingTimeout = 20000;
+        sendingListNotEmpty = new Condition2(sendingListLock);
+        sendingBusy = new Condition2(sendingListLock);
     }
 
     abstract protected void handleClosed();
@@ -78,9 +88,15 @@ public abstract class Socket {
 
     abstract protected void handleEstablished();
 
-    abstract protected void handleStpSent();
 
-    abstract protected void handleStpRcvd();
+    protected void handleStpSent() {
+
+    }
+
+
+    protected void handleStpRcvd() {
+
+    }
 
     abstract protected void handleClosing();
 
@@ -114,21 +130,31 @@ public abstract class Socket {
 
     protected void recData() {
         while (true) {
-            while (!recOutOfOrderList.isEmpty()) {
-                SocketMessage m = recOutOfOrderList.peek();
-                if (m.seqNo != curRecSeqNo) {
-                    break;
-                }
-                recInOrderList.add(m);
-                curRecSeqNo++;
-                recOutOfOrderList.remove(m);
-            }
             try {
                 SocketMessage message = rec();
-                if (!message.isData()) {
+                if (message.stp) {
+                    stateLock.acquire();
+                    stpSeqNo = message.seqNo;
+                    state = SocketState.STP_RCVD;
+                    stateLock.release();
                     break;
                 }
-                //ack
+                //for stp_send state
+                if (message.fin && !message.ack) {
+                    stateLock.acquire();
+                    send(true, false, true, false, message.seqNo, new byte[0]);
+                    state = SocketState.CLOSED;
+                    stateLock.release();
+                    break;
+                }
+                //for Closing state
+                if (message.fin && message.ack) {
+                    stateLock.acquire();
+                    state = SocketState.CLOSED;
+                    stateLock.release();
+                    break;
+                }
+                //data ack
                 if (message.ack) {
                     sendingListLock.acquire();
                     if (sendingList.removeIf(new Predicate<SocketMessage>() {
@@ -139,18 +165,47 @@ public abstract class Socket {
                     })) {
                         sendingListNotFull.wake();
                     }
-                    sendingListLock.release();
-                } else {
-                    //receive
-                    if (message.seqNo == curRecSeqNo) {
-                        recInOrderList.add(message);
-                        sendDataResp(message.seqNo);
-                        curRecSeqNo++;
-                    } else if (message.seqNo > curRecSeqNo) {
-                        recOutOfOrderList.add(message);
-                        sendDataResp(message.seqNo);
+                    if (sendingList.isEmpty()) {
+                        sendingBusy.wake();
                     }
+                    sendingListLock.release();
+                    break;
                 }
+                //drop illegal package
+                if (!message.isData()) {
+                    break;
+                }
+
+                //receive
+                recListLock.acquire();
+                while (!recOutOfOrderList.isEmpty()) {
+                    SocketMessage m = recOutOfOrderList.peek();
+                    if (m.seqNo != curRecSeqNo) {
+                        break;
+                    }
+                    recInOrderList.add(m);
+                    curRecSeqNo++;
+                    recOutOfOrderList.remove(m);
+                }
+                recListLock.release();
+                if (message.seqNo == curRecSeqNo) {
+                    recListLock.acquire();
+                    recInOrderList.add(message);
+                    curRecSeqNo++;
+                    recListLock.release();
+                    sendDataResp(message.seqNo);
+                } else if (message.seqNo > curRecSeqNo) {
+                    recListLock.acquire();
+                    recOutOfOrderList.add(message);
+                    recListLock.release();
+                    sendDataResp(message.seqNo);
+                }
+                recListLock.acquire();
+                if (curRecSeqNo == stpSeqNo) {
+                    recBusy.wake();
+                }
+                recListLock.release();
+
 
             } catch (MalformedPacketException e) {
             }
@@ -159,8 +214,11 @@ public abstract class Socket {
 
     protected void sendData() {
         while (true) {
-            SocketMessage message = (SocketMessage) sendInputList.removeFirst();
             sendingListLock.acquire();
+            while (sendInputList.isEmpty()) {
+                sendingListNotEmpty.sleep();
+            }
+            SocketMessage message = sendInputList.removeFirst();
             while (sendingList.size() >= dataWinSize) {
                 sendingListNotFull.sleep();
             }
@@ -176,6 +234,7 @@ public abstract class Socket {
             }).fork();
         }
     }
+
     //timeout kernal thread for every package, if ack is received, package should remove from sending list, then when timeout, nothing to do.
     //otherwise, move package from sending list to head of input list waiting for resend, this will trigger another timeout thread.
     //if resend in timeout thread, it will be complicate to handle fail-again.
@@ -186,6 +245,7 @@ public abstract class Socket {
             sendInputList.addFirst(message);
             sendingList.remove(message);
             sendingListNotFull.wake();
+            sendingListNotEmpty.wake();
         }
         sendingListLock.release();
     }
@@ -225,13 +285,57 @@ public abstract class Socket {
         }
 
         public void close() {
+            stateLock.acquire();
+            if (state == SocketState.ESTABLISHED) {
+                sendingListLock.acquire();
+                while (!sendInputList.isEmpty() || !sendingList.isEmpty()) {
+                    sendingBusy.sleep();
+                }
 
+                try {
+                    sendInputList.add(getSendMessage(false, true, false, false, curSendSeqNo, new byte[0]));
+                } catch (MalformedPacketException e) {
+                    sendingListLock.release();
+                    stateLock.release();
+                    return;
+                }
+                state = SocketState.STP_SENT;
+            } else if (state == SocketState.STP_RCVD) {
+                sendingListLock.acquire();
+                while (!sendInputList.isEmpty() || !sendingList.isEmpty()) {
+                    sendingBusy.sleep();
+                }
+                sendingListLock.release();
+
+                recListLock.acquire();
+                while (curRecSeqNo != stpSeqNo) {
+                    recBusy.sleep();
+                }
+                recListLock.release();
+                stateLock.acquire();
+                try {
+                    send(true, false, false, false, stpSeqNo + 1, new byte[0]);
+                } catch (MalformedPacketException e) {
+
+                }
+                state = SocketState.CLOSING;
+                stateLock.release();
+            }
+            while (state != SocketState.CLOSED) {
+                waitClose.sleep();
+            }
+            stateLock.release();
         }
 
         public int read(byte[] buf, int offset, int length) {
             int amount = 0;
             int pos = offset;
+            recListLock.acquire();
             while (amount < length) {
+                if (recInOrderList.isEmpty()) {
+                    recListLock.release();
+                    return amount;
+                }
                 SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
                 int _amount = Math.min(message.contents.length, length - amount);
                 System.arraycopy(message.contents, 0, buf, pos, _amount);
@@ -246,10 +350,15 @@ public abstract class Socket {
                 amount += _amount;
                 pos += _amount;
             }
+            recListLock.release();
             return amount;
         }
 
         public int write(byte[] buf, int offset, int length) {
+            if (state != SocketState.ESTABLISHED) {
+                return -1;
+            }
+            sendingListLock.acquire();
             int amount = 0;
             int pos = offset;
             while (amount < length) {
@@ -259,12 +368,16 @@ public abstract class Socket {
                 try {
                     sendInputList.add(getSendMessage(false, false, false, false, curSendSeqNo, content));
                 } catch (MalformedPacketException e) {
+                    sendingListNotEmpty.wake();
+                    sendingListLock.release();
                     return amount;
                 }
                 curSendSeqNo++;
                 amount += _amount;
                 pos += _amount;
             }
+            sendingListNotEmpty.wake();
+            sendingListLock.release();
             return amount;
         }
 
