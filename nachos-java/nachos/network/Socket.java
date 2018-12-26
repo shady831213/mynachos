@@ -30,6 +30,7 @@ public abstract class Socket {
     protected Lock stateLock;
     protected SocketState state;
     private Condition2 waitClose;
+    private Condition2 waitOpen;
     //state vars
     protected int srcPort;
     protected int srcLink;
@@ -62,6 +63,7 @@ public abstract class Socket {
         this.state = SocketState.CLOSED;
         stateLock = new Lock();
         waitClose = new Condition2(stateLock);
+        waitOpen = new Condition2(stateLock);
         recOutOfOrderList = new PriorityQueue<>(dataWinSize, new Comparator<SocketMessage>() {
             @Override
             public int compare(SocketMessage t1, SocketMessage t2) {
@@ -80,13 +82,18 @@ public abstract class Socket {
         sendingBusy = new Condition2(sendingListLock);
     }
 
-    abstract protected void handleClosed();
+    protected void handleClosed() {
+    }
 
-    abstract protected void handleSynSent();
+    protected void handleSynSent() {
 
-    abstract protected void handleSynRcvd();
+    }
 
-    abstract protected void handleEstablished();
+    protected void handleSynRcvd() {
+    }
+
+    protected void handleEstablished() {
+    }
 
 
     protected void handleStpSent() {
@@ -98,7 +105,9 @@ public abstract class Socket {
 
     }
 
-    abstract protected void handleClosing();
+    protected void handleClosing() {
+
+    }
 
     final public void schedule() {
         switch (this.state) {
@@ -128,10 +137,62 @@ public abstract class Socket {
         }
     }
 
+    public OpenFile accept() {
+        stateLock.acquire();
+        while (this.state != SocketState.SYN_RCVD) {
+            waitOpen.sleep();
+        }
+        state = SocketState.ESTABLISHED;
+        stateLock.release();
+        return new File();
+    }
+
+    public OpenFile connect() {
+        stateLock.acquire();
+        sendingListLock.acquire();
+        try {
+            sendInputList.add(getSendMessage(false, false, false, true, curSendSeqNo, new byte[0]));
+        } catch (MalformedPacketException e) {
+            sendingListLock.release();
+            stateLock.release();
+            return null;
+        }
+        sendingListLock.release();
+        this.state = SocketState.SYN_SENT;
+        while (this.state != SocketState.ESTABLISHED) {
+            waitOpen.sleep();
+        }
+        stateLock.release();
+        return new File();
+    }
+
     protected void recData() {
         while (true) {
             try {
                 SocketMessage message = rec();
+                //for syn package, in closed state
+                if (message.syn && !message.ack) {
+                    stateLock.acquire();
+                    dstLink = message.message.packet.srcLink;
+                    dstPort = message.message.srcPort;
+                    curSeqNo = message.seqNo;
+                    curRecSeqNo = curSeqNo;
+                    curSendSeqNo = curSeqNo;
+                    send(false, false, true, true, curSeqNo, new byte[0]);
+                    state = SocketState.SYN_RCVD;
+                    waitOpen.wake();
+                    stateLock.release();
+                    break;
+                }
+                //for syn ack, in syn_sent state
+                if (message.syn && message.ack) {
+                    stateLock.acquire();
+                    state = SocketState.ESTABLISHED;
+                    waitOpen.wake();
+                    stateLock.release();
+                    break;
+                }
+                //for stp package, in establish state
                 if (message.stp) {
                     stateLock.acquire();
                     stpSeqNo = message.seqNo;
@@ -299,6 +360,7 @@ public abstract class Socket {
                     stateLock.release();
                     return;
                 }
+                sendingListLock.release();
                 state = SocketState.STP_SENT;
             } else if (state == SocketState.STP_RCVD) {
                 sendingListLock.acquire();
