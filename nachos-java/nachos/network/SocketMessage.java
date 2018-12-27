@@ -2,8 +2,10 @@ package nachos.network;
 
 import nachos.machine.Lib;
 import nachos.machine.MalformedPacketException;
+import nachos.threads.Lock;
 
 public class SocketMessage {
+
 
     public SocketMessage() {
         new SocketMessage(false, false, false, false, 0);
