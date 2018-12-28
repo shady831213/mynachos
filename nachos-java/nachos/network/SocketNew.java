@@ -341,7 +341,7 @@ public class SocketNew {
             curRecSeqNo++;
             recListLock.release();
             return true;
-        } else if (message.seqNo > curRecSeqNo) {
+        } else if (message.seqNo > curRecSeqNo && message.seqNo < curRecSeqNo + dataWinSize) {
             recListLock.acquire();
             recOutOfOrderList.add(message);
             recListLock.release();
