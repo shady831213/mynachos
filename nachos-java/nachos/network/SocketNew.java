@@ -167,44 +167,29 @@ public class SocketNew {
     }
 
     class SocketClosed extends SocketState {
-        private SocketMessage syncMessage;
-        private Event canOpen;
 
         SocketClosed() {
-            canOpen = new Event();
         }
 
         //user event
         private void connect() {
-            syncMessage = sendSyn();
-            wd.start(sendingTimeout, new Runnable() {
-                @Override
-                public void run() {
-                    syncMessage = sendSyn();
-                }
-            }, -1);
+            sendSyn();
+            state = new SocketSynSent();
             canOpen.waitEvent();
-            state = new SocketEstablished();
         }
 
         private void read() {
         }
 
-
         private void accept() {
             canOpen.waitEvent();
-            state = new SocketEstablished();
         }
 
         //protocol event
         private void syn(SocketMessage message) {
             sendAck(message);
             canOpen.triggerEvent();
-        }
-
-        private void synAck(SocketMessage message) {
-            wd.reset();
-            canOpen.triggerEvent();
+            state = new SocketEstablished();
         }
 
         private void fin(SocketMessage message) {
@@ -212,6 +197,28 @@ public class SocketNew {
         }
 
     }
+
+    class SocketSynSent extends SocketState {
+
+        SocketSynSent() {
+            wd.start(sendingTimeout, new Runnable() {
+                @Override
+                public void run() {
+                    sendSyn();
+                }
+            }, -1);
+        }
+
+        //user event
+
+        //protocol event
+        private void synAck(SocketMessage message) {
+            wd.reset();
+            canOpen.triggerEvent();
+            state = new SocketEstablished();
+        }
+    }
+
 
     class SocketEstablished extends SocketState {
 
@@ -234,6 +241,10 @@ public class SocketNew {
         }
 
         //protocol event
+        private void syn(SocketMessage message) {
+            sendAck(message);
+        }
+
         private void ack(SocketMessage message) {
             if (receiveAck(message)) {
                 wd.reset();
@@ -286,6 +297,10 @@ public class SocketNew {
         }
 
         //protocol event
+        private void syn(SocketMessage message) {
+            sendAck(message);
+        }
+
         private void data(SocketMessage message) {
             if (receiveData(message)) {
                 sendAck(message);
@@ -324,6 +339,7 @@ public class SocketNew {
         }
 
         //protocol event
+
         private void ack(SocketMessage message) {
             if (receiveAck(message)) {
                 wd.reset();
@@ -388,6 +404,8 @@ public class SocketNew {
 
     private SocketState state;
 
+    private Event canOpen;
+
     private static int dataWinSize = 16;
     private static int sendingTimeout = 20000;
     final private watchdog wd = new watchdog(Stats.NetworkTime);
@@ -409,6 +427,7 @@ public class SocketNew {
 
     public SocketNew() {
         state = new SocketClosed();
+        canOpen = new Event();
 
         recOutOfOrderList = new PriorityQueue<>(dataWinSize, new Comparator<SocketMessage>() {
             @Override
