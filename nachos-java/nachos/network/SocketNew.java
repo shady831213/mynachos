@@ -168,8 +168,10 @@ public class SocketNew {
 
     class SocketClosed extends SocketState {
         private SocketMessage syncMessage;
+        private Event canOpen;
 
         SocketClosed() {
+            canOpen = new Event();
         }
 
         //user event
@@ -180,7 +182,8 @@ public class SocketNew {
                 public void run() {
                     syncMessage = sendSyn();
                 }
-            }, -1).join();
+            }, -1);
+            canOpen.waitEvent();
             state = new SocketEstablished();
         }
 
@@ -189,22 +192,19 @@ public class SocketNew {
 
 
         private void accept() {
-            wd.start(sendingTimeout, new Runnable() {
-                @Override
-                public void run() {
-                }
-            }, -1).join();
+            canOpen.waitEvent();
             state = new SocketEstablished();
         }
 
         //protocol event
         private void syn(SocketMessage message) {
             sendAck(message);
-            wd.reset();
+            canOpen.triggerEvent();
         }
 
         private void synAck(SocketMessage message) {
             wd.reset();
+            canOpen.triggerEvent();
         }
 
         private void fin(SocketMessage message) {
