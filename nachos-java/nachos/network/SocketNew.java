@@ -208,6 +208,7 @@ public class SocketNew {
         }
 
         private void fin(SocketMessage message) {
+            sendAck(message);
         }
 
     }
@@ -221,11 +222,11 @@ public class SocketNew {
 
         //user event
         private void close() {
-
+            sendStp();
+            state = new SocketStpSent();
         }
 
         private void write() {
-
         }
 
         private void read() {
@@ -256,9 +257,132 @@ public class SocketNew {
 
         private void stp(SocketMessage message) {
             stpSeqNo = message.seqNo;
+            state = new SocketStpRcvd();
         }
     }
 
+
+    class SocketStpSent extends SocketState {
+        //if both enter this state, and both stp missed
+        SocketStpSent() {
+            wd.start(sendingTimeout, new Runnable() {
+                @Override
+                public void run() {
+                    sendStp();
+                }
+            }, -1);
+        }
+
+        //user event
+        private void close() {
+
+        }
+
+        private void write() {
+        }
+
+        private void read() {
+
+        }
+
+        //protocol event
+        private void data(SocketMessage message) {
+            if (receiveData(message)) {
+                sendAck(message);
+            }
+        }
+
+        private void fin(SocketMessage message) {
+            wd.reset();
+            sendAck(message);
+            state = new SocketClosed();
+        }
+
+        private void stp(SocketMessage message) {
+            wd.reset();
+            sendFin();
+            state = new SocketClosing();
+        }
+    }
+
+    class SocketStpRcvd extends SocketState {
+
+        SocketStpRcvd() {
+        }
+
+        //user event
+        private void close() {
+            sendFin();
+            state = new SocketClosing();
+        }
+
+        private void write() {
+        }
+
+        private void read() {
+
+        }
+
+        //protocol event
+        private void ack(SocketMessage message) {
+            if (receiveAck(message)) {
+                wd.reset();
+                if (sendData() > 0) {
+                    wd.start(sendingTimeout, new Runnable() {
+                        @Override
+                        public void run() {
+                            reSendData();
+                        }
+                    }, -1);
+                }
+            }
+        }
+
+        private void fin(SocketMessage message) {
+            sendAck(message);
+            state = new SocketClosed();
+        }
+    }
+
+
+    class SocketClosing extends SocketState {
+
+        SocketClosing() {
+            wd.start(sendingTimeout, new Runnable() {
+                @Override
+                public void run() {
+                    sendFin();
+                }
+            }, -1);
+        }
+
+        //user event
+        private void close() {
+        }
+
+        private void write() {
+
+        }
+
+        private void read() {
+
+        }
+
+
+        //protocol event
+        private void fin(SocketMessage message) {
+            wd.reset();
+            sendAck(message);
+            state = new SocketClosed();
+        }
+
+        private void finAck(SocketMessage message) {
+            wd.reset();
+            state = new SocketClosed();
+        }
+
+
+    }
 
     private OpenFile File;
 
@@ -273,7 +397,6 @@ public class SocketNew {
     protected int curRecSeqNo;
     protected int stpSeqNo = -1;
     Lock recListLock;
-    Event recDone;
     LinkedList<SocketMessage> recInOrderList;
     PriorityQueue<SocketMessage> recOutOfOrderList;
 
@@ -295,7 +418,6 @@ public class SocketNew {
         });
         recInOrderList = new LinkedList<>();
         recListLock = new Lock();
-        recDone = new Event();
 
         sendInputList = new LinkedList<>();
         sendingList = new LinkedList<>();
@@ -321,6 +443,26 @@ public class SocketNew {
     //actions
     private SocketMessage sendSyn() {
         return new SocketMessage(false, false, false, true, 0);
+    }
+
+    //must atomic
+    private SocketMessage sendFin() {
+        SocketMessage finMessage;
+        sendingListLock.acquire();
+        waitSendListEmpty();
+        finMessage = new SocketMessage(true, false, false, false, curSendSeqNo);
+        sendingListLock.release();
+        return finMessage;
+    }
+
+    //must atomic
+    private SocketMessage sendStp() {
+        SocketMessage stpMessage;
+        sendingListLock.acquire();
+        waitSendListEmpty();
+        stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo);
+        sendingListLock.release();
+        return stpMessage;
     }
 
     private boolean receiveData(SocketMessage message) {
@@ -361,6 +503,7 @@ public class SocketNew {
             }
         }
         if (sendingList.isEmpty() && removed) {
+            sendingBusy.wake();
             sendingListLock.release();
             return true;
         }
@@ -396,6 +539,12 @@ public class SocketNew {
         }
         sendingListLock.release();
         return burstSize;
+    }
+
+    private void waitSendListEmpty() {
+        while (!sendInputList.isEmpty() || !sendingList.isEmpty()) {
+            sendingBusy.sleep();
+        }
     }
 
     private void sendAck(SocketMessage message) {
