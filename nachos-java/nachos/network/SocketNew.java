@@ -1,6 +1,7 @@
 package nachos.network;
 
 import nachos.machine.Lib;
+import nachos.machine.MalformedPacketException;
 import nachos.machine.OpenFile;
 import nachos.machine.Stats;
 import nachos.threads.Condition2;
@@ -117,10 +118,12 @@ public class SocketNew {
         }
 
         //user event
-        private void connect() {
+        private boolean connect() {
+            return false;
         }
 
-        private void accept() {
+        private boolean accept() {
+            return false;
         }
 
         private void close() {
@@ -172,17 +175,19 @@ public class SocketNew {
         }
 
         //user event
-        private void connect() {
+        private boolean connect() {
             sendSyn();
             state = new SocketSynSent();
             canOpen.waitEvent();
+            return true;
         }
 
         private void read() {
         }
 
-        private void accept() {
+        private boolean accept() {
             canOpen.waitEvent();
+            return true;
         }
 
         //protocol event
@@ -445,17 +450,16 @@ public class SocketNew {
     }
 
     public OpenFile connect() {
-        state.connect();
-        return openStream();
+        if (state.connect()) {
+            this.File = new File();
+        }
+        return this.File;
     }
 
     public OpenFile accept() {
-        state.accept();
-        return openStream();
-    }
-
-    private OpenFile openStream() {
-        this.File = new File();
+        if (state.accept()) {
+            this.File = new File();
+        }
         return this.File;
     }
 
@@ -571,6 +575,60 @@ public class SocketNew {
     }
 
     private class File extends OpenFile {
+        File() {
+            super(null, "Socket Sever File");
+        }
 
+        public void close() {
+        }
+
+        public int read(byte[] buf, int offset, int length) {
+            int amount = 0;
+            int pos = offset;
+            recListLock.acquire();
+            while (amount < length) {
+                if (recInOrderList.isEmpty()) {
+                    recListLock.release();
+                    return amount;
+                }
+                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
+                int _amount = Math.min(message.contents.length, length - amount);
+                System.arraycopy(message.contents, 0, buf, pos, _amount);
+                if (_amount == message.contents.length) {
+                    recInOrderList.removeFirst();
+                } else {
+                    //deal with left data
+                    byte[] leftContent = new byte[message.contents.length - _amount];
+                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
+                    message.contents = leftContent;
+                }
+                amount += _amount;
+                pos += _amount;
+            }
+            recListLock.release();
+            return amount;
+        }
+
+        public int write(byte[] buf, int offset, int length) {
+            sendingListLock.acquire();
+            int amount = 0;
+            int pos = offset;
+            while (amount < length) {
+                int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
+                byte[] content = new byte[_amount];
+                System.arraycopy(buf, pos, content, 0, _amount);
+                try {
+                    sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
+                } catch (MalformedPacketException e) {
+                    sendingListLock.release();
+                    return amount;
+                }
+                curSendSeqNo++;
+                amount += _amount;
+                pos += _amount;
+            }
+            sendingListLock.release();
+            return amount;
+        }
     }
 }
