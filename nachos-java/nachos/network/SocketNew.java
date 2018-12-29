@@ -1,13 +1,7 @@
 package nachos.network;
 
-import nachos.machine.Lib;
-import nachos.machine.MalformedPacketException;
-import nachos.machine.OpenFile;
-import nachos.machine.Stats;
-import nachos.threads.Condition2;
-import nachos.threads.KThread;
-import nachos.threads.Lock;
-import nachos.threads.ThreadedKernel;
+import nachos.machine.*;
+import nachos.threads.*;
 
 import java.util.*;
 
@@ -107,18 +101,67 @@ class watchdog {
 }
 
 class SocketRx {
-    final private PostOffice postOffice;
+    private Semaphore messageReceived;
     private Lock[] SocketListLock;
     private LinkedList<SocketNew>[] Sockets;
+    public Runnable receiveHandler;
+    private static final char dbgNet = 'n';
 
     SocketRx(PostOffice postOffice) {
-        this.postOffice = postOffice;
+        messageReceived = new Semaphore(0);
         SocketListLock = new Lock[MailMessage.portLimit];
         Sockets = new LinkedList[MailMessage.portLimit];
         for (int i = 0; i < Sockets.length; i++) {
             Sockets[i] = new LinkedList<>();
             SocketListLock[i] = new Lock();
         }
+        //should register to interrupt
+        this.receiveHandler = new Runnable() {
+            public void run() {
+                receiveInterrupt();
+            }
+        };
+        KThread t = new KThread(new Runnable() {
+            public void run() {
+                postalDelivery();
+            }
+        });
+
+        t.fork();
+    }
+
+    /**
+     * Wait for incoming messages, and then put them in the correct mailbox.
+     */
+    private void postalDelivery() {
+        while (true) {
+            messageReceived.P();
+
+            Packet p = Machine.networkLink().receive();
+
+            MailMessage mail;
+
+            try {
+                mail = new MailMessage(p);
+            } catch (MalformedPacketException e) {
+                continue;
+            }
+
+            if (Lib.test(dbgNet))
+                System.out.println("delivering mail to port " + mail.dstPort
+                        + ": " + mail);
+
+            // atomically add message to the mailbox and wake a waiting thread
+            dispatch(mail);
+        }
+    }
+
+    /**
+     * Called when a packet has arrived and can be dequeued from the network
+     * link.
+     */
+    private void receiveInterrupt() {
+        messageReceived.V();
     }
 
     public void bind(SocketNew socket) {
@@ -133,15 +176,15 @@ class SocketRx {
         SocketListLock[socket.srcPort].release();
     }
 
-    private void dispatch(MailMessage mail, int port) {
-        SocketListLock[port].acquire();
-        for (Iterator i = Sockets[port].iterator(); i.hasNext(); ) {
+    private void dispatch(MailMessage mail) {
+        SocketListLock[mail.dstPort].acquire();
+        for (Iterator i = Sockets[mail.dstPort].iterator(); i.hasNext(); ) {
             if (((SocketNew) i.next()).receiveMail(mail)) {
-                SocketListLock[port].release();
+                SocketListLock[mail.dstPort].release();
                 return;
             }
         }
-        SocketListLock[port].release();
+        SocketListLock[mail.dstPort].release();
     }
 
 }
@@ -230,8 +273,8 @@ public class SocketNew {
         //only in closed state and received syn, don't check (dstLink, dstPort) tuple
         private boolean syn(SocketMessage message) {
             sendAck(message);
-            dstLink = message.message.packet.dstLink;
-            dstPort = message.message.dstPort;
+            dstLink = message.message.packet.srcLink;
+            dstPort = message.message.srcPort;
             canOpen.triggerEvent();
             state = new SocketEstablished();
             return true;
@@ -607,7 +650,7 @@ public class SocketNew {
     }
 
     private boolean checkLinkAndPort(MailMessage mail) {
-        return mail.dstPort == this.dstPort && mail.packet.dstLink == this.dstLink;
+        return mail.srcPort == this.dstPort && mail.packet.srcLink == this.dstLink;
     }
 
     //events
