@@ -9,11 +9,7 @@ import nachos.threads.KThread;
 import nachos.threads.Lock;
 import nachos.threads.ThreadedKernel;
 
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.PriorityQueue;
-import java.util.function.Predicate;
+import java.util.*;
 
 class Event {
     private Lock lock = new Lock();
@@ -110,6 +106,46 @@ class watchdog {
 
 }
 
+class SocketRx {
+    final private PostOffice postOffice;
+    private Lock[] SocketListLock;
+    private LinkedList<SocketNew>[] Sockets;
+
+    SocketRx(PostOffice postOffice) {
+        this.postOffice = postOffice;
+        SocketListLock = new Lock[MailMessage.portLimit];
+        Sockets = new LinkedList[MailMessage.portLimit];
+        for (int i = 0; i < Sockets.length; i++) {
+            Sockets[i] = new LinkedList<>();
+            SocketListLock[i] = new Lock();
+        }
+    }
+
+    public void bind(SocketNew socket) {
+        SocketListLock[socket.srcPort].acquire();
+        Sockets[socket.srcPort].add(socket);
+        SocketListLock[socket.srcPort].release();
+    }
+
+    public void unbind(SocketNew socket) {
+        SocketListLock[socket.srcPort].acquire();
+        Sockets[socket.srcPort].remove(socket);
+        SocketListLock[socket.srcPort].release();
+    }
+
+    private void dispatch(MailMessage mail, int port) {
+        SocketListLock[port].acquire();
+        for (Iterator i = Sockets[port].iterator(); i.hasNext(); ) {
+            if (((SocketNew) i.next()).receiveMail(mail)) {
+                SocketListLock[port].release();
+                return;
+            }
+        }
+        SocketListLock[port].release();
+    }
+
+}
+
 public class SocketNew {
     //states
     abstract class SocketState {
@@ -139,32 +175,32 @@ public class SocketNew {
         }
 
         //protocol event
-        private void syn(SocketMessage message) {
-
+        private boolean syn(SocketMessage message) {
+            return false;
         }
 
-        private void synAck(SocketMessage message) {
-
+        private boolean synAck(SocketMessage message) {
+            return false;
         }
 
-        private void ack(SocketMessage message) {
-
+        private boolean ack(SocketMessage message) {
+            return false;
         }
 
-        private void data(SocketMessage message) {
-
+        private boolean data(SocketMessage message) {
+            return false;
         }
 
-        private void stp(SocketMessage message) {
-
+        private boolean stp(SocketMessage message) {
+            return false;
         }
 
-        private void fin(SocketMessage message) {
-
+        private boolean fin(SocketMessage message) {
+            return false;
         }
 
-        private void finAck(SocketMessage message) {
-
+        private boolean finAck(SocketMessage message) {
+            return false;
         }
 
     }
@@ -191,14 +227,21 @@ public class SocketNew {
         }
 
         //protocol event
-        private void syn(SocketMessage message) {
+        private boolean syn(SocketMessage message) {
             sendAck(message);
+            dstLink = message.message.packet.dstLink;
+            dstPort = message.message.dstPort;
             canOpen.triggerEvent();
             state = new SocketEstablished();
+            return true;
         }
 
-        private void fin(SocketMessage message) {
+        private boolean fin(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             sendAck(message);
+            return true;
         }
 
     }
@@ -217,10 +260,14 @@ public class SocketNew {
         //user event
 
         //protocol event
-        private void synAck(SocketMessage message) {
+        private boolean synAck(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             wd.reset();
             canOpen.triggerEvent();
             state = new SocketEstablished();
+            return true;
         }
     }
 
@@ -246,11 +293,18 @@ public class SocketNew {
         }
 
         //protocol event
-        private void syn(SocketMessage message) {
+        private boolean syn(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             sendAck(message);
+            return true;
         }
 
-        private void ack(SocketMessage message) {
+        private boolean ack(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             if (receiveAck(message)) {
                 wd.reset();
                 if (sendData() > 0) {
@@ -262,18 +316,27 @@ public class SocketNew {
                     }, -1);
                 }
             }
+            return true;
         }
 
-        private void data(SocketMessage message) {
+        private boolean data(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             if (receiveData(message)) {
                 sendAck(message);
             }
+            return true;
         }
 
 
-        private void stp(SocketMessage message) {
+        private boolean stp(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             stpSeqNo = message.seqNo;
             state = new SocketStpRcvd();
+            return true;
         }
     }
 
@@ -302,26 +365,42 @@ public class SocketNew {
         }
 
         //protocol event
-        private void syn(SocketMessage message) {
+        private boolean syn(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             sendAck(message);
+            return true;
         }
 
-        private void data(SocketMessage message) {
+        private boolean data(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             if (receiveData(message)) {
                 sendAck(message);
             }
+            return true;
         }
 
-        private void fin(SocketMessage message) {
+        private boolean fin(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             wd.reset();
             sendAck(message);
             state = new SocketClosed();
+            return true;
         }
 
-        private void stp(SocketMessage message) {
+        private boolean stp(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             wd.reset();
             sendFin();
             state = new SocketClosing();
+            return true;
         }
     }
 
@@ -345,7 +424,10 @@ public class SocketNew {
 
         //protocol event
 
-        private void ack(SocketMessage message) {
+        private boolean ack(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             if (receiveAck(message)) {
                 wd.reset();
                 if (sendData() > 0) {
@@ -357,11 +439,16 @@ public class SocketNew {
                     }, -1);
                 }
             }
+            return true;
         }
 
-        private void fin(SocketMessage message) {
+        private boolean fin(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             sendAck(message);
             state = new SocketClosed();
+            return true;
         }
     }
 
@@ -391,19 +478,86 @@ public class SocketNew {
 
 
         //protocol event
-        private void fin(SocketMessage message) {
+        private boolean fin(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             wd.reset();
             sendAck(message);
             state = new SocketClosed();
+            return true;
         }
 
-        private void finAck(SocketMessage message) {
+        private boolean finAck(SocketMessage message) {
+            if (!checkLinkAndPort(message.message)) {
+                return false;
+            }
             wd.reset();
             state = new SocketClosed();
+            return true;
         }
 
 
     }
+
+    private class File extends OpenFile {
+        File() {
+            super(null, "Socket Sever File");
+        }
+
+        public void close() {
+        }
+
+        public int read(byte[] buf, int offset, int length) {
+            int amount = 0;
+            int pos = offset;
+            recListLock.acquire();
+            while (amount < length) {
+                if (recInOrderList.isEmpty()) {
+                    recListLock.release();
+                    return amount;
+                }
+                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
+                int _amount = Math.min(message.contents.length, length - amount);
+                System.arraycopy(message.contents, 0, buf, pos, _amount);
+                if (_amount == message.contents.length) {
+                    recInOrderList.removeFirst();
+                } else {
+                    //deal with left data
+                    byte[] leftContent = new byte[message.contents.length - _amount];
+                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
+                    message.contents = leftContent;
+                }
+                amount += _amount;
+                pos += _amount;
+            }
+            recListLock.release();
+            return amount;
+        }
+
+        public int write(byte[] buf, int offset, int length) {
+            sendingListLock.acquire();
+            int amount = 0;
+            int pos = offset;
+            while (amount < length) {
+                int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
+                byte[] content = new byte[_amount];
+                System.arraycopy(buf, pos, content, 0, _amount);
+                try {
+                    sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
+                } catch (MalformedPacketException e) {
+                    sendingListLock.release();
+                    return amount;
+                }
+                curSendSeqNo++;
+                amount += _amount;
+                pos += _amount;
+            }
+            sendingListLock.release();
+            return amount;
+        }
+    }
+
 
     private OpenFile File;
 
@@ -414,7 +568,9 @@ public class SocketNew {
     private static int dataWinSize = 16;
     private static int sendingTimeout = 20000;
     final private watchdog wd = new watchdog(Stats.NetworkTime);
-
+    int srcPort = -1;
+    int dstPort = -1;
+    int dstLink = -1;
 
     //for receive
     protected int curRecSeqNo;
@@ -449,18 +605,60 @@ public class SocketNew {
         sendingBusy = new Condition2(sendingListLock);
     }
 
-    public OpenFile connect() {
+    private boolean checkLinkAndPort(MailMessage mail) {
+        return mail.dstPort == this.dstPort && mail.packet.dstLink == this.dstLink;
+    }
+
+    //events
+    public OpenFile connect(int dstLink, int dstPort) {
         if (state.connect()) {
             this.File = new File();
         }
+        //this.srcPort = getPort()
+        this.dstLink = dstLink;
+        this.dstPort = dstPort;
         return this.File;
     }
 
-    public OpenFile accept() {
+    public OpenFile accept(int port) {
         if (state.accept()) {
             this.File = new File();
         }
+        this.srcPort = port;
         return this.File;
+    }
+
+    public boolean receiveMail(MailMessage mail) {
+        SocketMessage message = new SocketMessage();
+        try {
+            message.recMailMessage(mail);
+        } catch (MalformedPacketException e) {
+            Lib.assertNotReached("get a bad mail!");
+        }
+        //syn/synack
+        if (message.syn) {
+            if (message.ack) {
+                return state.synAck(message);
+            }
+            return state.syn(message);
+        }
+        //fin/finack
+        if (message.fin) {
+            if (message.ack) {
+                return state.finAck(message);
+            }
+            return state.fin(message);
+        }
+        //stp
+        if (message.stp) {
+            return state.stp(message);
+        }
+        //ack
+        if (message.ack) {
+            return state.ack(message);
+        }
+        //data
+        return state.data(message);
     }
 
     //actions
@@ -574,61 +772,4 @@ public class SocketNew {
         //send(new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo));
     }
 
-    private class File extends OpenFile {
-        File() {
-            super(null, "Socket Sever File");
-        }
-
-        public void close() {
-        }
-
-        public int read(byte[] buf, int offset, int length) {
-            int amount = 0;
-            int pos = offset;
-            recListLock.acquire();
-            while (amount < length) {
-                if (recInOrderList.isEmpty()) {
-                    recListLock.release();
-                    return amount;
-                }
-                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
-                int _amount = Math.min(message.contents.length, length - amount);
-                System.arraycopy(message.contents, 0, buf, pos, _amount);
-                if (_amount == message.contents.length) {
-                    recInOrderList.removeFirst();
-                } else {
-                    //deal with left data
-                    byte[] leftContent = new byte[message.contents.length - _amount];
-                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
-                    message.contents = leftContent;
-                }
-                amount += _amount;
-                pos += _amount;
-            }
-            recListLock.release();
-            return amount;
-        }
-
-        public int write(byte[] buf, int offset, int length) {
-            sendingListLock.acquire();
-            int amount = 0;
-            int pos = offset;
-            while (amount < length) {
-                int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
-                byte[] content = new byte[_amount];
-                System.arraycopy(buf, pos, content, 0, _amount);
-                try {
-                    sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
-                } catch (MalformedPacketException e) {
-                    sendingListLock.release();
-                    return amount;
-                }
-                curSendSeqNo++;
-                amount += _amount;
-                pos += _amount;
-            }
-            sendingListLock.release();
-            return amount;
-        }
-    }
 }
