@@ -55,7 +55,7 @@ public class PostOffice {
     /**
      * Retrieve a message on the specified port, waiting if necessary.
      *
-     * @param    port    the port on which to wait for a message.
+     * @param port the port on which to wait for a message.
      * @return the message received.
      */
     public MailMessage receive(int port) {
@@ -74,7 +74,7 @@ public class PostOffice {
     /**
      * Wait for incoming messages, and then put them in the correct mailbox.
      */
-    private void postalDelivery() {
+    protected void postalDelivery() {
         while (true) {
             messageReceived.P();
 
@@ -129,10 +129,10 @@ public class PostOffice {
         messageSent.V();
     }
 
-    private SynchList[] queues;
-    private Semaphore messageReceived;    // V'd when a message can be dequeued
-    private Semaphore messageSent;    // V'd when a message can be queued
-    private Lock sendLock;
+    protected SynchList[] queues;
+    protected Semaphore messageReceived;    // V'd when a message can be dequeued
+    protected Semaphore messageSent;    // V'd when a message can be queued
+    protected Lock sendLock;
 
-    private static final char dbgNet = 'n';
+    protected static final char dbgNet = 'n';
 }

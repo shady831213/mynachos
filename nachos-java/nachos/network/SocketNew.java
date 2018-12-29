@@ -100,40 +100,25 @@ class watchdog {
 
 }
 
-class SocketRx {
-    private Semaphore messageReceived;
-    private Lock[] SocketListLock;
-    private LinkedList<SocketNew>[] Sockets;
-    public Runnable receiveHandler;
-    private static final char dbgNet = 'n';
+class PostOfficeNew extends PostOffice {
+    private Runnable[] receiveHandlers;
 
-    SocketRx(PostOffice postOffice) {
-        messageReceived = new Semaphore(0);
-        SocketListLock = new Lock[MailMessage.portLimit];
-        Sockets = new LinkedList[MailMessage.portLimit];
-        for (int i = 0; i < Sockets.length; i++) {
-            Sockets[i] = new LinkedList<>();
-            SocketListLock[i] = new Lock();
-        }
-        //should register to interrupt
-        this.receiveHandler = new Runnable() {
-            public void run() {
-                receiveInterrupt();
-            }
-        };
-        KThread t = new KThread(new Runnable() {
-            public void run() {
-                postalDelivery();
-            }
-        });
-
-        t.fork();
+    public PostOfficeNew() {
+        super();
+        receiveHandlers = new Runnable[MailMessage.portLimit];
     }
 
-    /**
-     * Wait for incoming messages, and then put them in the correct mailbox.
-     */
-    private void postalDelivery() {
+    public void setReceiveHandler(int port, Runnable handler) {
+        Lib.assertTrue(port >= 0 && port < receiveHandlers.length);
+        receiveHandlers[port] = handler;
+    }
+
+    public void removeReceiveHandler(int port) {
+        Lib.assertTrue(port >= 0 && port < receiveHandlers.length);
+        receiveHandlers[port] = null;
+    }
+
+    protected void postalDelivery() {
         while (true) {
             messageReceived.P();
 
@@ -152,16 +137,37 @@ class SocketRx {
                         + ": " + mail);
 
             // atomically add message to the mailbox and wake a waiting thread
-            dispatch(mail);
+            queues[mail.dstPort].add(mail);
+            //async callback
+            if (receiveHandlers[mail.dstPort] != null) {
+                receiveHandlers[mail.dstPort].run();
+            }
         }
     }
+}
 
-    /**
-     * Called when a packet has arrived and can be dequeued from the network
-     * link.
-     */
-    private void receiveInterrupt() {
-        messageReceived.V();
+class SocketRx {
+    private PostOfficeNew postOffice;
+    private Lock[] SocketListLock;
+    private LinkedList<SocketNew>[] Sockets;
+    public Runnable receiveHandler;
+    private static final char dbgNet = 'n';
+
+    SocketRx(PostOfficeNew postOffice) {
+        this.postOffice = postOffice;
+        SocketListLock = new Lock[MailMessage.portLimit];
+        Sockets = new LinkedList[MailMessage.portLimit];
+        for (int i = 0; i < Sockets.length; i++) {
+            Sockets[i] = new LinkedList<>();
+            SocketListLock[i] = new Lock();
+            final int port = i;
+            postOffice.setReceiveHandler(port, new Runnable() {
+                @Override
+                public void run() {
+                    dispatch(postOffice.receive(port));
+                }
+            });
+        }
     }
 
     public void bind(SocketNew socket) {
@@ -177,9 +183,15 @@ class SocketRx {
     }
 
     private void dispatch(MailMessage mail) {
+        SocketMessage message = new SocketMessage();
+        try {
+            message.recMailMessage(mail);
+        } catch (MalformedPacketException e) {
+            Lib.assertNotReached("get a bad mail!");
+        }
         SocketListLock[mail.dstPort].acquire();
         for (Iterator i = Sockets[mail.dstPort].iterator(); i.hasNext(); ) {
-            if (((SocketNew) i.next()).receiveMail(mail)) {
+            if (((SocketNew) i.next()).receiveMail(message)) {
                 SocketListLock[mail.dstPort].release();
                 return;
             }
@@ -672,13 +684,7 @@ public class SocketNew {
         return this.File;
     }
 
-    public boolean receiveMail(MailMessage mail) {
-        SocketMessage message = new SocketMessage();
-        try {
-            message.recMailMessage(mail);
-        } catch (MalformedPacketException e) {
-            Lib.assertNotReached("get a bad mail!");
-        }
+    public boolean receiveMail(SocketMessage message) {
         //syn/synack
         if (message.syn) {
             if (message.ack) {
