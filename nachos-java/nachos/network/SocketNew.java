@@ -227,6 +227,7 @@ public class SocketNew {
         }
 
         //protocol event
+        //only in closed state and received syn, don't check (dstLink, dstPort) tuple
         private boolean syn(SocketMessage message) {
             sendAck(message);
             dstLink = message.message.packet.dstLink;
