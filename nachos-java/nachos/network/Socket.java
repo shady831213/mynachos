@@ -99,6 +99,234 @@ class Watchdog {
 
 }
 
+abstract class SocketChannel {
+    final protected Socket socket;
+
+    SocketChannel(Socket socket) {
+        this.socket = socket;
+    }
+
+    public void sendAck(SocketMessage message) {
+        try {
+            socket.send(new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo, new byte[0]));
+        } catch (MalformedPacketException e) {
+            Lib.assertNotReached("bad SocketMessage !");
+        }
+    }
+}
+
+class SocketRx extends SocketChannel {
+    private int curRecSeqNo;
+
+    public void setStpSeqNo(int stpSeqNo) {
+        this.stpSeqNo = stpSeqNo;
+    }
+
+    private int stpSeqNo = -1;
+    private Lock recListLock;
+    private LinkedList<SocketMessage> recInOrderList;
+    private PriorityQueue<SocketMessage> recOutOfOrderList;
+    private int winSize;
+
+    SocketRx(Socket socket, int winSize) {
+        super(socket);
+        this.winSize = winSize;
+        recOutOfOrderList = new PriorityQueue<>(this.winSize, new Comparator<SocketMessage>() {
+            @Override
+            public int compare(SocketMessage t1, SocketMessage t2) {
+                return t1.seqNo - t2.seqNo;
+            }
+        });
+        recInOrderList = new LinkedList<>();
+        recListLock = new Lock();
+    }
+
+    public boolean receiveData(SocketMessage message) {
+        recListLock.acquire();
+        while (!recOutOfOrderList.isEmpty()) {
+            SocketMessage m = recOutOfOrderList.peek();
+            if (m.seqNo != curRecSeqNo) {
+                break;
+            }
+            recInOrderList.add(m);
+            curRecSeqNo++;
+            recOutOfOrderList.remove(m);
+        }
+        recListLock.release();
+        if (message.seqNo == curRecSeqNo) {
+            recListLock.acquire();
+            recInOrderList.add(message);
+            curRecSeqNo++;
+            recListLock.release();
+            return true;
+        } else if (message.seqNo < curRecSeqNo) {
+            //for delayed trans
+            return true;
+        } else if (message.seqNo < curRecSeqNo + winSize) {
+            recListLock.acquire();
+            recOutOfOrderList.add(message);
+            recListLock.release();
+            return true;
+        }
+        return false;
+    }
+
+    public int read(byte[] buf, int offset, int length) {
+        int amount = 0;
+        int pos = offset;
+        recListLock.acquire();
+        while (amount < length) {
+            if (recInOrderList.isEmpty()) {
+                recListLock.release();
+                return amount;
+            }
+            SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
+            int _amount = Math.min(message.contents.length, length - amount);
+            System.arraycopy(message.contents, 0, buf, pos, _amount);
+            if (_amount == message.contents.length) {
+                recInOrderList.removeFirst();
+            } else {
+                //deal with left data
+                byte[] leftContent = new byte[message.contents.length - _amount];
+                System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
+                message.contents = leftContent;
+            }
+            amount += _amount;
+            pos += _amount;
+        }
+        recListLock.release();
+        return amount;
+    }
+}
+
+class SocketTx extends SocketChannel {
+    private int winSize;
+    private int curSendSeqNo;
+    private LinkedList<SocketMessage> sendInputList;
+    private Lock sendingListLock;
+    private Condition2 sendingBusy;
+    private LinkedList<SocketMessage> sendingList;
+
+    SocketTx(Socket socket, int winSize) {
+        super(socket);
+        this.winSize = winSize;
+        sendInputList = new LinkedList<>();
+        sendingList = new LinkedList<>();
+        sendingListLock = new Lock();
+        sendingBusy = new Condition2(sendingListLock);
+    }
+
+    public boolean receiveAck(SocketMessage message) {
+        sendingListLock.acquire();
+        boolean removed = false;
+        for (Iterator i = sendingList.iterator(); i.hasNext(); ) {
+            if (message.seqNo == ((SocketMessage) i.next()).seqNo) {
+                i.remove();
+                removed = true;
+                break;
+            }
+        }
+        if (sendingList.isEmpty() && removed) {
+            sendingBusy.wake();
+            sendingListLock.release();
+            return true;
+        }
+        sendingListLock.release();
+        return false;
+    }
+
+    //this method is idempotent
+    public int sendData() {
+        int burstSize = 0;
+        sendingListLock.acquire();
+        while (sendingList.size() < winSize) {
+            if (sendInputList.isEmpty()) {
+                break;
+            }
+            SocketMessage message = sendInputList.removeFirst();
+            socket.send(message);
+            sendingList.add(message);
+            burstSize++;
+        }
+
+        sendingListLock.release();
+        return burstSize;
+    }
+
+    public int reSendData() {
+        int burstSize = 0;
+        sendingListLock.acquire();
+        //send old data
+        for (Iterator i = sendingList.iterator(); i.hasNext(); ) {
+            socket.send((SocketMessage) (i.next()));
+            burstSize++;
+        }
+        sendingListLock.release();
+        return burstSize;
+    }
+
+    private void waitSendListEmpty() {
+        while (!sendInputList.isEmpty() || !sendingList.isEmpty()) {
+            sendingBusy.sleep();
+        }
+    }
+
+    //must atomic
+    public SocketMessage sendFin() {
+        SocketMessage finMessage;
+        sendingListLock.acquire();
+        waitSendListEmpty();
+        try {
+            finMessage = new SocketMessage(true, false, false, false, curSendSeqNo, new byte[0]);
+        } catch (MalformedPacketException e) {
+            finMessage = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
+        sendingListLock.release();
+        socket.send(finMessage);
+        return finMessage;
+    }
+
+    //must atomic
+    public SocketMessage sendStp() {
+        SocketMessage stpMessage;
+        sendingListLock.acquire();
+        waitSendListEmpty();
+        try {
+            stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo, new byte[0]);
+
+        } catch (MalformedPacketException e) {
+            stpMessage = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
+        sendingListLock.release();
+        socket.send(stpMessage);
+        return stpMessage;
+    }
+
+    public int write(byte[] buf, int offset, int length) {
+        sendingListLock.acquire();
+        int amount = 0;
+        int pos = offset;
+        while (amount < length) {
+            int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
+            byte[] content = new byte[_amount];
+            System.arraycopy(buf, pos, content, 0, _amount);
+            try {
+                sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
+            } catch (MalformedPacketException e) {
+                sendingListLock.release();
+                return amount;
+            }
+            curSendSeqNo++;
+            amount += _amount;
+            pos += _amount;
+        }
+        sendingListLock.release();
+        return amount;
+    }
+}
+
 public class Socket {
     //states
     abstract class SocketState {
@@ -118,30 +346,7 @@ public class Socket {
         }
 
         protected int read(byte[] buf, int offset, int length) {
-            int amount = 0;
-            int pos = offset;
-            recListLock.acquire();
-            while (amount < length) {
-                if (recInOrderList.isEmpty()) {
-                    recListLock.release();
-                    return amount;
-                }
-                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
-                int _amount = Math.min(message.contents.length, length - amount);
-                System.arraycopy(message.contents, 0, buf, pos, _amount);
-                if (_amount == message.contents.length) {
-                    recInOrderList.removeFirst();
-                } else {
-                    //deal with left data
-                    byte[] leftContent = new byte[message.contents.length - _amount];
-                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
-                    message.contents = leftContent;
-                }
-                amount += _amount;
-                pos += _amount;
-            }
-            recListLock.release();
-            return amount;
+            return rx.read(buf, offset, length);
         }
 
         protected int write(byte[] buf, int offset, int length) {
@@ -195,7 +400,7 @@ public class Socket {
         protected boolean syn(SocketMessage message) {
             dstLink = message.message.packet.srcLink;
             dstPort = message.message.srcPort;
-            sendAck(message);
+            tx.sendAck(message);
             canOpen.triggerEvent();
             state = new SocketEstablished();
             Lib.debug(dbgSocket, "get syn @ closed!");
@@ -206,7 +411,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            sendAck(message);
+            tx.sendAck(message);
             return true;
         }
 
@@ -246,11 +451,11 @@ public class Socket {
         }
 
         private void sendData() {
-            if (Socket.this.sendData() > 0) {
+            if (tx.sendData() > 0) {
                 wd.start(sendingTimeout, new Runnable() {
                     @Override
                     public void run() {
-                        Socket.this.reSendData();
+                        tx.reSendData();
                     }
                 }, -1);
             }
@@ -258,29 +463,12 @@ public class Socket {
 
         //user event
         protected void close() {
-            sendStp();
+            tx.sendStp();
             state = new SocketStpSent();
         }
 
         protected int write(byte[] buf, int offset, int length) {
-            sendingListLock.acquire();
-            int amount = 0;
-            int pos = offset;
-            while (amount < length) {
-                int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
-                byte[] content = new byte[_amount];
-                System.arraycopy(buf, pos, content, 0, _amount);
-                try {
-                    sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
-                } catch (MalformedPacketException e) {
-                    sendingListLock.release();
-                    return amount;
-                }
-                curSendSeqNo++;
-                amount += _amount;
-                pos += _amount;
-            }
-            sendingListLock.release();
+            int amount = tx.write(buf, offset, length);
             sendData();
             return amount;
         }
@@ -290,7 +478,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            sendAck(message);
+            tx.sendAck(message);
             return true;
         }
 
@@ -298,7 +486,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            if (receiveAck(message)) {
+            if (tx.receiveAck(message)) {
                 wd.reset();
                 sendData();
             }
@@ -309,8 +497,8 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            if (receiveData(message)) {
-                sendAck(message);
+            if (rx.receiveData(message)) {
+                rx.sendAck(message);
             }
             return true;
         }
@@ -320,7 +508,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            stpSeqNo = message.seqNo;
+            rx.setStpSeqNo(message.seqNo);
             state = new SocketStpRcvd();
             return true;
         }
@@ -333,7 +521,7 @@ public class Socket {
             wd.start(sendingTimeout, new Runnable() {
                 @Override
                 public void run() {
-                    sendStp();
+                    tx.sendStp();
                 }
             }, -1);
         }
@@ -344,7 +532,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            sendAck(message);
+            tx.sendAck(message);
             return true;
         }
 
@@ -353,8 +541,8 @@ public class Socket {
                 return false;
             }
             Lib.debug(dbgSocket, "get data @ stpsent!");
-            if (receiveData(message)) {
-                sendAck(message);
+            if (rx.receiveData(message)) {
+                rx.sendAck(message);
                 Lib.debug(dbgSocket, "sent ack @ stpsent!");
             }
             return true;
@@ -365,7 +553,7 @@ public class Socket {
                 return false;
             }
             wd.reset();
-            sendAck(message);
+            tx.sendAck(message);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -376,7 +564,7 @@ public class Socket {
                 return false;
             }
             wd.reset();
-            sendFin();
+            tx.sendFin();
             state = new SocketClosing();
             return true;
         }
@@ -389,7 +577,7 @@ public class Socket {
 
         //user event
         protected void close() {
-            sendFin();
+            tx.sendFin();
             state = new SocketClosing();
         }
 
@@ -399,13 +587,13 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            if (receiveAck(message)) {
+            if (tx.receiveAck(message)) {
                 wd.reset();
-                if (sendData() > 0) {
+                if (tx.sendData() > 0) {
                     wd.start(sendingTimeout, new Runnable() {
                         @Override
                         public void run() {
-                            reSendData();
+                            tx.reSendData();
                         }
                     }, -1);
                 }
@@ -417,7 +605,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            sendAck(message);
+            tx.sendAck(message);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -434,7 +622,7 @@ public class Socket {
 
                 @Override
                 public void run() {
-                    sendFin();
+                    tx.sendFin();
                     cnt--;
                     if (cnt == 0) {
                         state = new SocketClosed();
@@ -450,7 +638,7 @@ public class Socket {
                 return false;
             }
             wd.reset();
-            sendAck(message);
+            tx.sendAck(message);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -507,18 +695,9 @@ public class Socket {
 
 
     //for receive
-    protected int curRecSeqNo;
-    protected int stpSeqNo = -1;
-    Lock recListLock;
-    LinkedList<SocketMessage> recInOrderList;
-    PriorityQueue<SocketMessage> recOutOfOrderList;
-
+    private SocketRx rx;
     //for send
-    protected int curSendSeqNo;
-    LinkedList<SocketMessage> sendInputList;
-    Lock sendingListLock;
-    Condition2 sendingBusy;
-    LinkedList<SocketMessage> sendingList;
+    private SocketTx tx;
 
     public Socket(SocketPostOffice postOffice) {
         this.postOffice = postOffice;
@@ -526,19 +705,9 @@ public class Socket {
         canOpen = new Event();
         canClose = new Event();
 
-        recOutOfOrderList = new PriorityQueue<>(dataWinSize, new Comparator<SocketMessage>() {
-            @Override
-            public int compare(SocketMessage t1, SocketMessage t2) {
-                return t1.seqNo - t2.seqNo;
-            }
-        });
-        recInOrderList = new LinkedList<>();
-        recListLock = new Lock();
+        rx = new SocketRx(this, dataWinSize);
+        tx = new SocketTx(this, dataWinSize);
 
-        sendInputList = new LinkedList<>();
-        sendingList = new LinkedList<>();
-        sendingListLock = new Lock();
-        sendingBusy = new Condition2(sendingListLock);
     }
 
     private boolean checkLinkAndPort(SocketMessage message) {
@@ -624,135 +793,12 @@ public class Socket {
             message = null;
             Lib.assertNotReached("bad SocketMessage !");
         }
-        postOffice.send(this, message);
+        send(message);
         return message;
     }
 
-    //must atomic
-    private SocketMessage sendFin() {
-        SocketMessage finMessage;
-        sendingListLock.acquire();
-        waitSendListEmpty();
-        try {
-            finMessage = new SocketMessage(true, false, false, false, curSendSeqNo, new byte[0]);
-        } catch (MalformedPacketException e) {
-            finMessage = null;
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-        sendingListLock.release();
-        postOffice.send(this, finMessage);
-        return finMessage;
+
+    public void send(SocketMessage message) {
+        postOffice.send(this, message);
     }
-
-    //must atomic
-    private SocketMessage sendStp() {
-        SocketMessage stpMessage;
-        sendingListLock.acquire();
-        waitSendListEmpty();
-        try {
-            stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo, new byte[0]);
-
-        } catch (MalformedPacketException e) {
-            stpMessage = null;
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-        sendingListLock.release();
-        postOffice.send(this, stpMessage);
-        return stpMessage;
-    }
-
-    private boolean receiveData(SocketMessage message) {
-        recListLock.acquire();
-        while (!recOutOfOrderList.isEmpty()) {
-            SocketMessage m = recOutOfOrderList.peek();
-            if (m.seqNo != curRecSeqNo) {
-                break;
-            }
-            recInOrderList.add(m);
-            curRecSeqNo++;
-            recOutOfOrderList.remove(m);
-        }
-        recListLock.release();
-        Lib.debug(dbgSocket, "message seqno = " + message.seqNo + ";curRecSeqNo = " + curRecSeqNo);
-        if (message.seqNo == curRecSeqNo) {
-            recListLock.acquire();
-            recInOrderList.add(message);
-            curRecSeqNo++;
-            recListLock.release();
-            return true;
-        } else if (message.seqNo < curRecSeqNo) {
-            //for delayed trans
-            return true;
-        } else if (message.seqNo < curRecSeqNo + dataWinSize) {
-            recListLock.acquire();
-            recOutOfOrderList.add(message);
-            recListLock.release();
-            return true;
-        }
-        return false;
-    }
-
-    private boolean receiveAck(SocketMessage message) {
-        sendingListLock.acquire();
-        boolean removed = false;
-        for (Iterator i = sendingList.iterator(); i.hasNext(); ) {
-            if (message.seqNo == ((SocketMessage) i.next()).seqNo) {
-                i.remove();
-                removed = true;
-                break;
-            }
-        }
-        if (sendingList.isEmpty() && removed) {
-            sendingBusy.wake();
-            sendingListLock.release();
-            return true;
-        }
-        sendingListLock.release();
-        return false;
-    }
-
-    private int sendData() {
-        int burstSize = 0;
-        sendingListLock.acquire();
-        while (sendingList.size() < dataWinSize) {
-            if (sendInputList.isEmpty()) {
-                break;
-            }
-            SocketMessage message = sendInputList.removeFirst();
-            postOffice.send(this, message);
-            sendingList.add(message);
-            burstSize++;
-        }
-
-        sendingListLock.release();
-        return burstSize;
-    }
-
-    private int reSendData() {
-        int burstSize = 0;
-        sendingListLock.acquire();
-        //send old data
-        for (Iterator i = sendingList.iterator(); i.hasNext(); ) {
-            postOffice.send(this, (SocketMessage) (i.next()));
-            burstSize++;
-        }
-        sendingListLock.release();
-        return burstSize;
-    }
-
-    private void waitSendListEmpty() {
-        while (!sendInputList.isEmpty() || !sendingList.isEmpty()) {
-            sendingBusy.sleep();
-        }
-    }
-
-    private void sendAck(SocketMessage message) {
-        try {
-            postOffice.send(this, new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo, new byte[0]));
-        } catch (MalformedPacketException e) {
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-
-    }
-
 }
