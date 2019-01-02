@@ -245,37 +245,21 @@ public class Socket {
 
         }
 
+        private void sendData() {
+            if (Socket.this.sendData() > 0) {
+                wd.start(sendingTimeout, new Runnable() {
+                    @Override
+                    public void run() {
+                        Socket.this.reSendData();
+                    }
+                }, -1);
+            }
+        }
+
         //user event
         protected void close() {
             sendStp();
             state = new SocketStpSent();
-        }
-
-        protected int read(byte[] buf, int offset, int length) {
-            int amount = 0;
-            int pos = offset;
-            recListLock.acquire();
-            while (amount < length) {
-                if (recInOrderList.isEmpty()) {
-                    recListLock.release();
-                    return amount;
-                }
-                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
-                int _amount = Math.min(message.contents.length, length - amount);
-                System.arraycopy(message.contents, 0, buf, pos, _amount);
-                if (_amount == message.contents.length) {
-                    recInOrderList.removeFirst();
-                } else {
-                    //deal with left data
-                    byte[] leftContent = new byte[message.contents.length - _amount];
-                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
-                    message.contents = leftContent;
-                }
-                amount += _amount;
-                pos += _amount;
-            }
-            recListLock.release();
-            return amount;
         }
 
         protected int write(byte[] buf, int offset, int length) {
@@ -297,6 +281,7 @@ public class Socket {
                 pos += _amount;
             }
             sendingListLock.release();
+            sendData();
             return amount;
         }
 
@@ -315,14 +300,7 @@ public class Socket {
             }
             if (receiveAck(message)) {
                 wd.reset();
-                if (sendData() > 0) {
-                    wd.start(sendingTimeout, new Runnable() {
-                        @Override
-                        public void run() {
-                            reSendData();
-                        }
-                    }, -1);
-                }
+                sendData();
             }
             return true;
         }
@@ -624,6 +602,7 @@ public class Socket {
         state.close();
         canClose.waitEvent();
         postOffice.unbind(Socket.this);
+        Lib.debug(dbgSocket, "closed!");
     }
 
     public boolean receive(SocketMessage message) {
@@ -673,7 +652,13 @@ public class Socket {
         SocketMessage finMessage;
         sendingListLock.acquire();
         waitSendListEmpty();
-        finMessage = new SocketMessage(true, false, false, false, curSendSeqNo);
+        try {
+            finMessage = new SocketMessage(true, false, false, false, curSendSeqNo, new byte[0]);
+
+        } catch (MalformedPacketException e) {
+            finMessage = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
         sendingListLock.release();
         postOffice.send(this, finMessage);
         return finMessage;
@@ -684,7 +669,13 @@ public class Socket {
         SocketMessage stpMessage;
         sendingListLock.acquire();
         waitSendListEmpty();
-        stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo);
+        try {
+            stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo, new byte[0]);
+
+        } catch (MalformedPacketException e) {
+            stpMessage = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
         sendingListLock.release();
         postOffice.send(this, stpMessage);
         return stpMessage;

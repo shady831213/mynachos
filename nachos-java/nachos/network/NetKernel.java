@@ -46,24 +46,22 @@ public class NetKernel extends VMKernel {
         System.out.println("Press any key to start the network test...");
         console.readByte(true);
 
-        int local = Machine.networkLink().getLinkAddress();
-
         // ping this machine first
-        ping(local);
+        ping(0);
 
         // if we're 0 or 1, ping the opposite
 //        if (local <= 1)
 //            ping(1 - local);
     }
 
-    private void ping(int dstLink) {
+    private void ping(int dstPort) {
         int srcLink = Machine.networkLink().getLinkAddress();
 
-        System.out.println("PING " + dstLink + " from " + srcLink);
 
         long startTime = Machine.timer().getTime();
         Socket socket = new Socket(postOffice);
-        OpenFile file = socket.connect(srcLink, 1);
+        OpenFile file = socket.connect(srcLink, dstPort);
+        System.out.println("PING port " + dstPort + " from " + socket.srcPort);
         byte[] data = Lib.bytesFromInt(0x5a5a);
         file.write(data, 0, data.length);
         file.close();
@@ -78,7 +76,8 @@ public class NetKernel extends VMKernel {
 
     private void pingServer() {
         Socket socket = new Socket(postOffice);
-        OpenFile file = socket.accept(1);
+        OpenFile file = socket.accept(0);
+        System.out.println("accept @ port " + 0 + " from " + socket.dstPort);
         byte[] data;
         data = new byte[4];
         while (file.read(data, 0, data.length) <= 0) {
