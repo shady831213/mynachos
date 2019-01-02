@@ -23,7 +23,7 @@ public class NetKernel extends VMKernel {
     public void initialize(String[] args) {
         super.initialize(args);
 
-        postOffice = new PostOffice();
+        postOffice = new SocketPostOffice(new PostOfficeExt());
     }
 
     /**
@@ -52,8 +52,8 @@ public class NetKernel extends VMKernel {
         ping(local);
 
         // if we're 0 or 1, ping the opposite
-        if (local <= 1)
-            ping(1 - local);
+//        if (local <= 1)
+//            ping(1 - local);
     }
 
     private void ping(int dstLink) {
@@ -62,44 +62,31 @@ public class NetKernel extends VMKernel {
         System.out.println("PING " + dstLink + " from " + srcLink);
 
         long startTime = Machine.timer().getTime();
-
-        MailMessage ping;
-
-        try {
-            ping = new MailMessage(dstLink, 1,
-                    Machine.networkLink().getLinkAddress(), 0,
-                    new byte[0]);
-        } catch (MalformedPacketException e) {
-            Lib.assertNotReached();
-            return;
+        Socket socket = new Socket(postOffice);
+        OpenFile file = socket.connect(srcLink, 1);
+        byte[] data = Lib.bytesFromInt(0x5a5a);
+        file.write(data, 0, data.length);
+        file.close();
+        while (file.read(data, 0, data.length) <= 0) {
         }
 
-        postOffice.send(ping);
-
-        MailMessage ack = postOffice.receive(0);
 
         long endTime = Machine.timer().getTime();
 
-        System.out.println("time=" + (endTime - startTime) + " ticks");
+        System.out.println("time=" + (endTime - startTime) + " ticks;Client get data " + Integer.toHexString(Lib.bytesToInt(data, 0)));
     }
 
     private void pingServer() {
-        while (true) {
-            MailMessage ping = postOffice.receive(1);
-
-            MailMessage ack;
-
-            try {
-                ack = new MailMessage(ping.packet.srcLink, ping.srcPort,
-                        ping.packet.dstLink, ping.dstPort,
-                        ping.contents);
-            } catch (MalformedPacketException e) {
-                // should never happen...
-                continue;
-            }
-
-            postOffice.send(ack);
+        Socket socket = new Socket(postOffice);
+        OpenFile file = socket.accept(1);
+        byte[] data;
+        data = new byte[4];
+        while (file.read(data, 0, data.length) <= 0) {
         }
+        System.out.println("Server get data " + Integer.toHexString(Lib.bytesToInt(data, 0)));
+        data = Lib.bytesFromInt(0xa5a5);
+        file.write(data, 0, data.length);
+        file.close();
     }
 
     /**
@@ -116,7 +103,7 @@ public class NetKernel extends VMKernel {
         super.terminate();
     }
 
-    public static PostOffice postOffice;
+    public static SocketPostOffice postOffice;
 
     // dummy variables to make javac smarter
     private static NetProcess dummy1 = null;

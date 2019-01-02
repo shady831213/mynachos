@@ -12,7 +12,7 @@ public class SocketPostOffice {
     final private PostOfficeExt postOffice;
     private Lock[] SocketListLock;
     private LinkedList<Socket>[] Sockets;
-    private static final char dbgNet = 'n';
+    private static final char dbgSocket = 's';
 
     SocketPostOffice(PostOfficeExt postOffice) {
         this.postOffice = postOffice;
@@ -71,7 +71,8 @@ public class SocketPostOffice {
         }
         SocketListLock[mail.dstPort].acquire();
         for (Iterator i = Sockets[mail.dstPort].iterator(); i.hasNext(); ) {
-            if (((Socket) i.next()).receiveMail(message)) {
+            if (((Socket) i.next()).receive(message)) {
+                Lib.debug(dbgSocket, "valid message!");
                 SocketListLock[mail.dstPort].release();
                 return;
             }
@@ -85,6 +86,10 @@ public class SocketPostOffice {
             mailHeader = new MailMessage(socket.dstLink, socket.dstPort, Machine.networkLink().getLinkAddress(), socket.srcPort, new byte[0]);
             message.sendMailMessage(mailHeader);
         } catch (MalformedPacketException e) {
+            System.out.println(socket.dstLink);
+            System.out.println(socket.dstPort);
+            System.out.println(Machine.networkLink().getLinkAddress());
+            System.out.println(socket.srcPort);
             Lib.assertNotReached("get a bad mail!");
         }
         this.postOffice.send(message.message);

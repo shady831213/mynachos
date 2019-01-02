@@ -107,17 +107,17 @@ public class Socket {
         }
 
         //user event
-        private void connect() {
+        protected void connect() {
         }
 
-        private void accept() {
+        protected void accept() {
         }
 
-        private void close() {
+        protected void close() {
 
         }
 
-        public int read(byte[] buf, int offset, int length) {
+        protected int read(byte[] buf, int offset, int length) {
             int amount = 0;
             int pos = offset;
             recListLock.acquire();
@@ -144,36 +144,36 @@ public class Socket {
             return amount;
         }
 
-        public int write(byte[] buf, int offset, int length) {
+        protected int write(byte[] buf, int offset, int length) {
             return -1;
         }
 
         //protocol event
-        private boolean syn(SocketMessage message) {
+        protected boolean syn(SocketMessage message) {
             return false;
         }
 
-        private boolean synAck(SocketMessage message) {
+        protected boolean synAck(SocketMessage message) {
             return false;
         }
 
-        private boolean ack(SocketMessage message) {
+        protected boolean ack(SocketMessage message) {
             return false;
         }
 
-        private boolean data(SocketMessage message) {
+        protected boolean data(SocketMessage message) {
             return false;
         }
 
-        private boolean stp(SocketMessage message) {
+        protected boolean stp(SocketMessage message) {
             return false;
         }
 
-        private boolean fin(SocketMessage message) {
+        protected boolean fin(SocketMessage message) {
             return false;
         }
 
-        private boolean finAck(SocketMessage message) {
+        protected boolean finAck(SocketMessage message) {
             return false;
         }
 
@@ -185,28 +185,24 @@ public class Socket {
         }
 
         //user event
-        private void connect() {
+        protected void connect() {
             sendSyn();
             state = new SocketSynSent();
-            canOpen.waitEvent();
-        }
-
-        private void accept() {
-            canOpen.waitEvent();
         }
 
         //protocol event
         //only in closed state and received syn, don't check (dstLink, dstPort) tuple
-        private boolean syn(SocketMessage message) {
-            sendAck(message);
+        protected boolean syn(SocketMessage message) {
             dstLink = message.message.packet.srcLink;
             dstPort = message.message.srcPort;
+            sendAck(message);
             canOpen.triggerEvent();
             state = new SocketEstablished();
+            Lib.debug(dbgSocket, "get syn @ closed!");
             return true;
         }
 
-        private boolean fin(SocketMessage message) {
+        protected boolean fin(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -230,7 +226,7 @@ public class Socket {
         //user event
 
         //protocol event
-        private boolean synAck(SocketMessage message) {
+        protected boolean synAck(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -250,12 +246,12 @@ public class Socket {
         }
 
         //user event
-        private void close() {
+        protected void close() {
             sendStp();
             state = new SocketStpSent();
         }
 
-        public int read(byte[] buf, int offset, int length) {
+        protected int read(byte[] buf, int offset, int length) {
             int amount = 0;
             int pos = offset;
             recListLock.acquire();
@@ -282,7 +278,7 @@ public class Socket {
             return amount;
         }
 
-        public int write(byte[] buf, int offset, int length) {
+        protected int write(byte[] buf, int offset, int length) {
             sendingListLock.acquire();
             int amount = 0;
             int pos = offset;
@@ -305,7 +301,7 @@ public class Socket {
         }
 
         //protocol event
-        private boolean syn(SocketMessage message) {
+        protected boolean syn(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -313,7 +309,7 @@ public class Socket {
             return true;
         }
 
-        private boolean ack(SocketMessage message) {
+        protected boolean ack(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -331,7 +327,7 @@ public class Socket {
             return true;
         }
 
-        private boolean data(SocketMessage message) {
+        protected boolean data(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -342,7 +338,7 @@ public class Socket {
         }
 
 
-        private boolean stp(SocketMessage message) {
+        protected boolean stp(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -366,7 +362,7 @@ public class Socket {
 
         //user event
         //protocol event
-        private boolean syn(SocketMessage message) {
+        protected boolean syn(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -374,7 +370,7 @@ public class Socket {
             return true;
         }
 
-        private boolean data(SocketMessage message) {
+        protected boolean data(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -384,7 +380,7 @@ public class Socket {
             return true;
         }
 
-        private boolean fin(SocketMessage message) {
+        protected boolean fin(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -395,7 +391,7 @@ public class Socket {
             return true;
         }
 
-        private boolean stp(SocketMessage message) {
+        protected boolean stp(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -412,7 +408,7 @@ public class Socket {
         }
 
         //user event
-        private void close() {
+        protected void close() {
             sendFin();
             state = new SocketClosing();
         }
@@ -446,7 +442,7 @@ public class Socket {
 
         //protocol event
 
-        private boolean ack(SocketMessage message) {
+        protected boolean ack(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -464,7 +460,7 @@ public class Socket {
             return true;
         }
 
-        private boolean fin(SocketMessage message) {
+        protected boolean fin(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -496,7 +492,7 @@ public class Socket {
         }
 
         //protocol event
-        private boolean fin(SocketMessage message) {
+        protected boolean fin(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -507,7 +503,7 @@ public class Socket {
             return true;
         }
 
-        private boolean finAck(SocketMessage message) {
+        protected boolean finAck(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
@@ -554,6 +550,8 @@ public class Socket {
     int srcPort = -1;
     int dstPort = -1;
     int dstLink = -1;
+    private static final char dbgSocket = 's';
+
 
     //for receive
     protected int curRecSeqNo;
@@ -597,37 +595,45 @@ public class Socket {
     //events
     public OpenFile connect(int dstLink, int dstPort) {
         Lib.assertTrue(state instanceof SocketClosed);
-        state.connect();
-        this.File = new File();
         this.srcPort = postOffice.allocPort();
         Lib.assertTrue(this.srcPort != -1, "no free port!");
         postOffice.bind(this);
         this.dstLink = dstLink;
         this.dstPort = dstPort;
+        state.connect();
+        canOpen.waitEvent();
+        this.File = new File();
+        Lib.debug(dbgSocket, "connected!");
         return this.File;
     }
 
     public OpenFile accept(int port) {
         Lib.assertTrue(state instanceof SocketClosed);
+        this.srcPort = postOffice.allocPort(port);
+        Lib.assertTrue(this.srcPort != -1, "port " + port + " is not free!");
         postOffice.bind(this);
         state.accept();
+        canOpen.waitEvent();
         this.File = new File();
+        Lib.debug(dbgSocket, "accepted!");
         return this.File;
     }
 
     public void close() {
-        Lib.assertTrue(state instanceof SocketEstablished || state instanceof SocketStpRcvd);
+        Lib.assertTrue(state instanceof SocketEstablished || state instanceof SocketStpRcvd, "state is " + state.getClass());
         state.close();
         canClose.waitEvent();
         postOffice.unbind(Socket.this);
     }
 
-    public boolean receiveMail(SocketMessage message) {
+    public boolean receive(SocketMessage message) {
         //syn/synack
         if (message.syn) {
             if (message.ack) {
+                Lib.debug(dbgSocket, "get syn ack!");
                 return state.synAck(message);
             }
+            Lib.debug(dbgSocket, "get syn!");
             return state.syn(message);
         }
         //fin/finack
@@ -651,7 +657,13 @@ public class Socket {
 
     //actions
     private SocketMessage sendSyn() {
-        SocketMessage message = new SocketMessage(false, false, false, true, 0);
+        SocketMessage message;
+        try {
+            message = new SocketMessage(false, false, false, true, 0, new byte[0]);
+        } catch (MalformedPacketException e) {
+            message = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
         postOffice.send(this, message);
         return message;
     }
@@ -760,7 +772,12 @@ public class Socket {
     }
 
     private void sendAck(SocketMessage message) {
-        postOffice.send(this, new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo));
+        try {
+            postOffice.send(this, new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo, new byte[0]));
+        } catch (MalformedPacketException e) {
+            Lib.assertNotReached("bad SocketMessage !");
+        }
+
     }
 
 }

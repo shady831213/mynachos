@@ -6,12 +6,7 @@ import nachos.threads.Lock;
 
 public class SocketMessage {
 
-
-    public SocketMessage() {
-        new SocketMessage(false, false, false, false, 0);
-    }
-
-    public SocketMessage(boolean fin, boolean stp, boolean ack, boolean syn, int seqNo) {
+    private void init(boolean fin, boolean stp, boolean ack, boolean syn, int seqNo) {
         this.fin = fin;
         this.stp = stp;
         this.ack = ack;
@@ -19,8 +14,16 @@ public class SocketMessage {
         this.seqNo = seqNo;
     }
 
+    public SocketMessage() {
+        init(false, false, false, false, 0);
+    }
+
+    public SocketMessage(boolean fin, boolean stp, boolean ack, boolean syn, int seqNo) {
+        init(fin, stp, ack, syn, seqNo);
+    }
+
     public SocketMessage(boolean fin, boolean stp, boolean ack, boolean syn, int seqNo, byte[] contents) throws MalformedPacketException {
-        new SocketMessage(fin, stp, ack, syn, seqNo);
+        init(fin, stp, ack, syn, seqNo);
         if (contents.length > maxContentsLength)
             throw new MalformedPacketException();
         this.contents = contents;
@@ -39,7 +42,6 @@ public class SocketMessage {
                 4);
         System.arraycopy(contents, 0, mailContents, headerLength,
                 contents.length);
-
         return mailContents;
     }
 
@@ -104,4 +106,5 @@ public class SocketMessage {
 
     public static final int maxContentsLength =
             MailMessage.maxContentsLength - headerLength;
+    private static final char dbgSocket = 's';
 }
