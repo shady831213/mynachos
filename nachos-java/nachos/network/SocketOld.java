@@ -8,7 +8,7 @@ import java.util.LinkedList;
 import java.util.PriorityQueue;
 import java.util.function.Predicate;
 
-public abstract class Socket {
+public abstract class SocketOld {
     //constant
     enum SocketState {
         CLOSED,
@@ -57,7 +57,7 @@ public abstract class Socket {
     Condition2 sendingBusy;
     LinkedList<SocketMessage> sendingList;
 
-    public Socket(int srcPort) {
+    public SocketOld(int srcPort) {
         this.srcPort = srcPort;
         this.srcLink = Machine.networkLink().getLinkAddress();
         this.state = SocketState.CLOSED;
@@ -342,7 +342,7 @@ public abstract class Socket {
 
     protected class File extends OpenFile {
         File() {
-            super(null, "Socket Sever File");
+            super(null, "SocketOld Sever File");
         }
 
         public void close() {

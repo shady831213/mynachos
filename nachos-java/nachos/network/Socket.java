@@ -44,15 +44,14 @@ class Event {
     }
 }
 
-
-class watchdog {
+class Watchdog {
     final private int period;
     private boolean clear;
     private KThread timeoutT;
     Event started;
     Event ended;
 
-    watchdog(int period) {
+    Watchdog(int period) {
         this.period = period;
         started = new Event();
         ended = new Event();
@@ -100,132 +99,7 @@ class watchdog {
 
 }
 
-class PostOfficeNew extends PostOffice {
-    private Runnable[] receiveHandlers;
-
-    public PostOfficeNew() {
-        super();
-        receiveHandlers = new Runnable[MailMessage.portLimit];
-    }
-
-    public void setReceiveHandler(int port, Runnable handler) {
-        Lib.assertTrue(port >= 0 && port < receiveHandlers.length);
-        receiveHandlers[port] = handler;
-    }
-
-    protected void postalDelivery() {
-        while (true) {
-            messageReceived.P();
-
-            Packet p = Machine.networkLink().receive();
-
-            MailMessage mail;
-
-            try {
-                mail = new MailMessage(p);
-            } catch (MalformedPacketException e) {
-                continue;
-            }
-
-            if (Lib.test(dbgNet))
-                System.out.println("delivering mail to port " + mail.dstPort
-                        + ": " + mail);
-
-            // atomically add message to the mailbox and wake a waiting thread
-            queues[mail.dstPort].add(mail);
-            //async callback
-            if (receiveHandlers[mail.dstPort] != null) {
-                receiveHandlers[mail.dstPort].run();
-            }
-        }
-    }
-}
-
-class SocketPostOffice {
-    final private PostOfficeNew postOffice;
-    private Lock[] SocketListLock;
-    private LinkedList<SocketNew>[] Sockets;
-    private static final char dbgNet = 'n';
-
-    SocketPostOffice(PostOfficeNew postOffice) {
-        this.postOffice = postOffice;
-        SocketListLock = new Lock[MailMessage.portLimit];
-        Sockets = new LinkedList[MailMessage.portLimit];
-        for (int i = 0; i < Sockets.length; i++) {
-            Sockets[i] = new LinkedList<>();
-            SocketListLock[i] = new Lock();
-            final int port = i;
-            postOffice.setReceiveHandler(port, new Runnable() {
-                @Override
-                public void run() {
-                    dispatch(postOffice.receive(port));
-                }
-            });
-        }
-    }
-
-    public void bind(SocketNew socket) {
-        SocketListLock[socket.srcPort].acquire();
-        Sockets[socket.srcPort].add(socket);
-        SocketListLock[socket.srcPort].release();
-    }
-
-    public int allocPort(int port) {
-        SocketListLock[port].acquire();
-        if (Sockets[port].isEmpty()) {
-            SocketListLock[port].release();
-            return port;
-        }
-        SocketListLock[port].release();
-        return -1;
-    }
-
-    public int allocPort() {
-        for (int port = 0; port < Sockets.length; port++) {
-            if (allocPort(port) != -1) {
-                return port;
-            }
-        }
-        return -1;
-    }
-
-    public void unbind(SocketNew socket) {
-        SocketListLock[socket.srcPort].acquire();
-        Sockets[socket.srcPort].remove(socket);
-        SocketListLock[socket.srcPort].release();
-    }
-
-    private void dispatch(MailMessage mail) {
-        SocketMessage message = new SocketMessage();
-        try {
-            message.recMailMessage(mail);
-        } catch (MalformedPacketException e) {
-            Lib.assertNotReached("get a bad mail!");
-        }
-        SocketListLock[mail.dstPort].acquire();
-        for (Iterator i = Sockets[mail.dstPort].iterator(); i.hasNext(); ) {
-            if (((SocketNew) i.next()).receiveMail(message)) {
-                SocketListLock[mail.dstPort].release();
-                return;
-            }
-        }
-        SocketListLock[mail.dstPort].release();
-    }
-
-    public void send(SocketNew socket, SocketMessage message) {
-        MailMessage mailHeader;
-        try {
-            mailHeader = new MailMessage(socket.dstLink, socket.dstPort, Machine.networkLink().getLinkAddress(), socket.srcPort, new byte[0]);
-            message.sendMailMessage(mailHeader);
-        } catch (MalformedPacketException e) {
-            Lib.assertNotReached("get a bad mail!");
-        }
-        this.postOffice.send(message.message);
-    }
-
-}
-
-public class SocketNew {
+public class Socket {
     //states
     abstract class SocketState {
 
@@ -245,12 +119,35 @@ public class SocketNew {
 
         }
 
-        private void write() {
-
+        public int read(byte[] buf, int offset, int length) {
+            int amount = 0;
+            int pos = offset;
+            recListLock.acquire();
+            while (amount < length) {
+                if (recInOrderList.isEmpty()) {
+                    recListLock.release();
+                    return amount;
+                }
+                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
+                int _amount = Math.min(message.contents.length, length - amount);
+                System.arraycopy(message.contents, 0, buf, pos, _amount);
+                if (_amount == message.contents.length) {
+                    recInOrderList.removeFirst();
+                } else {
+                    //deal with left data
+                    byte[] leftContent = new byte[message.contents.length - _amount];
+                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
+                    message.contents = leftContent;
+                }
+                amount += _amount;
+                pos += _amount;
+            }
+            recListLock.release();
+            return amount;
         }
 
-        private void read() {
-
+        public int write(byte[] buf, int offset, int length) {
+            return -1;
         }
 
         //protocol event
@@ -295,9 +192,6 @@ public class SocketNew {
             state = new SocketSynSent();
             canOpen.waitEvent();
             return true;
-        }
-
-        private void read() {
         }
 
         private boolean accept() {
@@ -365,11 +259,53 @@ public class SocketNew {
             state = new SocketStpSent();
         }
 
-        private void write() {
+        public int read(byte[] buf, int offset, int length) {
+            int amount = 0;
+            int pos = offset;
+            recListLock.acquire();
+            while (amount < length) {
+                if (recInOrderList.isEmpty()) {
+                    recListLock.release();
+                    return amount;
+                }
+                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
+                int _amount = Math.min(message.contents.length, length - amount);
+                System.arraycopy(message.contents, 0, buf, pos, _amount);
+                if (_amount == message.contents.length) {
+                    recInOrderList.removeFirst();
+                } else {
+                    //deal with left data
+                    byte[] leftContent = new byte[message.contents.length - _amount];
+                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
+                    message.contents = leftContent;
+                }
+                amount += _amount;
+                pos += _amount;
+            }
+            recListLock.release();
+            return amount;
         }
 
-        private void read() {
-
+        public int write(byte[] buf, int offset, int length) {
+            sendingListLock.acquire();
+            int amount = 0;
+            int pos = offset;
+            while (amount < length) {
+                int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
+                byte[] content = new byte[_amount];
+                System.arraycopy(buf, pos, content, 0, _amount);
+                try {
+                    sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
+                } catch (MalformedPacketException e) {
+                    sendingListLock.release();
+                    return amount;
+                }
+                curSendSeqNo++;
+                amount += _amount;
+                pos += _amount;
+            }
+            sendingListLock.release();
+            return amount;
         }
 
         //protocol event
@@ -433,17 +369,6 @@ public class SocketNew {
         }
 
         //user event
-        private void close() {
-
-        }
-
-        private void write() {
-        }
-
-        private void read() {
-
-        }
-
         //protocol event
         private boolean syn(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
@@ -496,11 +421,31 @@ public class SocketNew {
             state = new SocketClosing();
         }
 
-        private void write() {
-        }
-
-        private void read() {
-
+        public int read(byte[] buf, int offset, int length) {
+            int amount = 0;
+            int pos = offset;
+            recListLock.acquire();
+            while (amount < length) {
+                if (recInOrderList.isEmpty()) {
+                    recListLock.release();
+                    return amount;
+                }
+                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
+                int _amount = Math.min(message.contents.length, length - amount);
+                System.arraycopy(message.contents, 0, buf, pos, _amount);
+                if (_amount == message.contents.length) {
+                    recInOrderList.removeFirst();
+                } else {
+                    //deal with left data
+                    byte[] leftContent = new byte[message.contents.length - _amount];
+                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
+                    message.contents = leftContent;
+                }
+                amount += _amount;
+                pos += _amount;
+            }
+            recListLock.release();
+            return amount;
         }
 
         //protocol event
@@ -539,25 +484,19 @@ public class SocketNew {
 
         SocketClosing() {
             wd.start(sendingTimeout, new Runnable() {
+                int cnt = 3;
+
                 @Override
                 public void run() {
                     sendFin();
+                    cnt--;
+                    if (cnt == 0) {
+                        state = new SocketClosed();
+                        canClose.triggerEvent();
+                    }
                 }
-            }, -1);
+            }, 3);
         }
-
-        //user event
-        private void close() {
-        }
-
-        private void write() {
-
-        }
-
-        private void read() {
-
-        }
-
 
         //protocol event
         private boolean fin(SocketMessage message) {
@@ -591,56 +530,15 @@ public class SocketNew {
         }
 
         public void close() {
-            SocketNew.this.close();
+            Socket.this.close();
         }
 
         public int read(byte[] buf, int offset, int length) {
-            int amount = 0;
-            int pos = offset;
-            recListLock.acquire();
-            while (amount < length) {
-                if (recInOrderList.isEmpty()) {
-                    recListLock.release();
-                    return amount;
-                }
-                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
-                int _amount = Math.min(message.contents.length, length - amount);
-                System.arraycopy(message.contents, 0, buf, pos, _amount);
-                if (_amount == message.contents.length) {
-                    recInOrderList.removeFirst();
-                } else {
-                    //deal with left data
-                    byte[] leftContent = new byte[message.contents.length - _amount];
-                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
-                    message.contents = leftContent;
-                }
-                amount += _amount;
-                pos += _amount;
-            }
-            recListLock.release();
-            return amount;
+            return state.read(buf, offset, length);
         }
 
         public int write(byte[] buf, int offset, int length) {
-            sendingListLock.acquire();
-            int amount = 0;
-            int pos = offset;
-            while (amount < length) {
-                int _amount = Math.min(SocketMessage.maxContentsLength, length - amount);
-                byte[] content = new byte[_amount];
-                System.arraycopy(buf, pos, content, 0, _amount);
-                try {
-                    sendInputList.add(new SocketMessage(false, false, false, false, curSendSeqNo, content));
-                } catch (MalformedPacketException e) {
-                    sendingListLock.release();
-                    return amount;
-                }
-                curSendSeqNo++;
-                amount += _amount;
-                pos += _amount;
-            }
-            sendingListLock.release();
-            return amount;
+            return state.write(buf, offset, length);
         }
     }
 
@@ -655,7 +553,7 @@ public class SocketNew {
     private static int dataWinSize = 16;
     private static int sendingTimeout = 20000;
     final private SocketPostOffice postOffice;
-    final private watchdog wd = new watchdog(Stats.NetworkTime);
+    final private Watchdog wd = new Watchdog(Stats.NetworkTime);
     int srcPort = -1;
     int dstPort = -1;
     int dstLink = -1;
@@ -674,7 +572,7 @@ public class SocketNew {
     Condition2 sendingBusy;
     LinkedList<SocketMessage> sendingList;
 
-    public SocketNew(SocketPostOffice postOffice) {
+    public Socket(SocketPostOffice postOffice) {
         this.postOffice = postOffice;
         state = new SocketClosed();
         canOpen = new Event();
@@ -720,6 +618,12 @@ public class SocketNew {
         return this.File;
     }
 
+    public void close() {
+        state.close();
+        canClose.waitEvent();
+        postOffice.unbind(Socket.this);
+    }
+
     public boolean receiveMail(SocketMessage message) {
         //syn/synack
         if (message.syn) {
@@ -745,18 +649,6 @@ public class SocketNew {
         }
         //data
         return state.data(message);
-    }
-
-    public void close() {
-        state.close();
-        canClose.waitEvent();
-        //wait for a while, then remove socket from list
-        wd.start(sendingTimeout, new Runnable() {
-            @Override
-            public void run() {
-                postOffice.unbind(SocketNew.this);
-            }
-        }, 1);
     }
 
     //actions
