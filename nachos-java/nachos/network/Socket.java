@@ -120,6 +120,7 @@ class SocketRx extends SocketChannel {
     private LinkedList<SocketMessage> recInOrderList;
     private PriorityQueue<SocketMessage> recOutOfOrderList;
     private int winSize;
+    private static final char dbgSocket = 's';
 
     SocketRx(Socket socket, int winSize) {
         super(socket);
@@ -138,6 +139,7 @@ class SocketRx extends SocketChannel {
         if (message.seqNo < curRecSeqNo) {
             //for delayed trans
             sendAck(message);
+            Lib.debug(dbgSocket, "receiver: resp seqno " + message.seqNo + " curRecSeqNo = " + curRecSeqNo);
             return true;
         }
         if (message.seqNo == curRecSeqNo) {
@@ -146,21 +148,25 @@ class SocketRx extends SocketChannel {
             curRecSeqNo++;
             while (!recOutOfOrderList.isEmpty()) {
                 SocketMessage m = recOutOfOrderList.peek();
-                if (m.seqNo != curRecSeqNo) {
+                if (m.seqNo > curRecSeqNo) {
                     break;
                 }
-                recInOrderList.add(m);
-                curRecSeqNo++;
+                if (m.seqNo == curRecSeqNo) {
+                    recInOrderList.add(m);
+                    curRecSeqNo++;
+                }
                 recOutOfOrderList.remove(m);
             }
             recListLock.release();
             sendAck(message);
+            Lib.debug(dbgSocket, "receiver: resp seqno " + message.seqNo + " curRecSeqNo = " + curRecSeqNo);
             return true;
         } else if (message.seqNo < curRecSeqNo + winSize) {
             recListLock.acquire();
             recOutOfOrderList.add(message);
             recListLock.release();
             sendAck(message);
+            Lib.debug(dbgSocket, "receiver: resp seqno " + message.seqNo + " curRecSeqNo = " + curRecSeqNo);
             return true;
         }
         return false;
@@ -219,6 +225,8 @@ class SocketTx extends SocketChannel {
     private Lock sendingListLock;
     private Condition2 sendingBusy;
     private LinkedList<SocketMessage> sendingList;
+    private static final char dbgSocket = 's';
+
 
     SocketTx(Socket socket, int winSize) {
         super(socket);
@@ -235,6 +243,7 @@ class SocketTx extends SocketChannel {
         for (Iterator i = sendingList.iterator(); i.hasNext(); ) {
             if (message.seqNo == ((SocketMessage) i.next()).seqNo) {
                 i.remove();
+                Lib.debug(dbgSocket, "Sender: get resp of seqno " + message.seqNo);
                 removed = true;
                 break;
             }
@@ -688,7 +697,11 @@ public class Socket {
         }
 
         public int read(byte[] buf, int offset, int length) {
-            return state.read(buf, offset, length);
+            int amount = state.read(buf, offset, length);
+            if (amount == 0) {
+                Lib.debug(dbgSocket, "cur state = " + state.getClass());
+            }
+            return amount;
         }
 
         public int write(byte[] buf, int offset, int length) {

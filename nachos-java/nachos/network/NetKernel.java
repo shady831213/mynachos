@@ -65,18 +65,17 @@ public class NetKernel extends VMKernel {
         OpenFile file = socket.connect(srcLink, dstPort);
         System.out.println("PING port " + dstPort + " from " + socket.srcPort);
         byte[] tdata, rdata;
-        tdata = new byte[200];
+        tdata = new byte[3456];
         for (int i = 0; i < tdata.length; i++) {
             tdata[i] = (byte) (i % 255);
         }
-        rdata = new byte[295];
+        rdata = new byte[777];
 
         file.write(tdata, 0, tdata.length);
         file.close();
         int rcnt = 0;
         while (rcnt != rdata.length) {
             rcnt += file.read(rdata, rcnt, rdata.length);
-            System.out.println("Client get " + rcnt + " data");
         }
 
         long endTime = Machine.timer().getTime();
@@ -93,18 +92,17 @@ public class NetKernel extends VMKernel {
         OpenFile file = socket.accept(0);
         System.out.println("accept @ port " + 0 + " from " + socket.dstPort);
         byte[] tdata, rdata;
-        rdata = new byte[200];
+        rdata = new byte[3456];
         int rcnt = 0;
         while (rcnt != rdata.length) {
             rcnt += file.read(rdata, rcnt, rdata.length);
-            System.out.println("Server get " + rcnt + " data");
         }
         System.out.println("Server get data :");
         for (int i = 0; i < rdata.length; i++) {
             System.out.println("Server rdata " + i + " = " + rdata[i]);
         }
 
-        tdata = new byte[295];
+        tdata = new byte[777];
         for (int i = 0; i < tdata.length; i++) {
             tdata[i] = (byte) (255 - (i % 255));
         }
