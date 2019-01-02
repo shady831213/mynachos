@@ -483,6 +483,7 @@ public class Socket {
     class SocketClosing extends SocketState {
 
         SocketClosing() {
+            //if 3 times timeout, may be the endpoint has been closed and never response for fin package, so force close.
             wd.start(sendingTimeout, new Runnable() {
                 int cnt = 3;
 
