@@ -352,8 +352,10 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
+            Lib.debug(dbgSocket, "get data @ stpsent!");
             if (receiveData(message)) {
                 sendAck(message);
+                Lib.debug(dbgSocket, "sent ack @ stpsent!");
             }
             return true;
         }
@@ -389,33 +391,6 @@ public class Socket {
         protected void close() {
             sendFin();
             state = new SocketClosing();
-        }
-
-        public int read(byte[] buf, int offset, int length) {
-            int amount = 0;
-            int pos = offset;
-            recListLock.acquire();
-            while (amount < length) {
-                if (recInOrderList.isEmpty()) {
-                    recListLock.release();
-                    return amount;
-                }
-                SocketMessage message = (SocketMessage) recInOrderList.peekFirst();
-                int _amount = Math.min(message.contents.length, length - amount);
-                System.arraycopy(message.contents, 0, buf, pos, _amount);
-                if (_amount == message.contents.length) {
-                    recInOrderList.removeFirst();
-                } else {
-                    //deal with left data
-                    byte[] leftContent = new byte[message.contents.length - _amount];
-                    System.arraycopy(message.contents, _amount, leftContent, 0, message.contents.length - _amount);
-                    message.contents = leftContent;
-                }
-                amount += _amount;
-                pos += _amount;
-            }
-            recListLock.release();
-            return amount;
         }
 
         //protocol event
@@ -606,6 +581,7 @@ public class Socket {
     }
 
     public boolean receive(SocketMessage message) {
+        Lib.debug(dbgSocket, "current state :" + state.getClass());
         //syn/synack
         if (message.syn) {
             if (message.ack) {
@@ -618,19 +594,24 @@ public class Socket {
         //fin/finack
         if (message.fin) {
             if (message.ack) {
+                Lib.debug(dbgSocket, "get fin ack!");
                 return state.finAck(message);
             }
+            Lib.debug(dbgSocket, "get fin!");
             return state.fin(message);
         }
         //stp
         if (message.stp) {
+            Lib.debug(dbgSocket, "get stp!");
             return state.stp(message);
         }
         //ack
         if (message.ack) {
+            Lib.debug(dbgSocket, "get ack!");
             return state.ack(message);
         }
         //data
+        Lib.debug(dbgSocket, "get data!");
         return state.data(message);
     }
 
@@ -654,7 +635,6 @@ public class Socket {
         waitSendListEmpty();
         try {
             finMessage = new SocketMessage(true, false, false, false, curSendSeqNo, new byte[0]);
-
         } catch (MalformedPacketException e) {
             finMessage = null;
             Lib.assertNotReached("bad SocketMessage !");
@@ -693,13 +673,17 @@ public class Socket {
             recOutOfOrderList.remove(m);
         }
         recListLock.release();
+        Lib.debug(dbgSocket, "message seqno = " + message.seqNo + ";curRecSeqNo = " + curRecSeqNo);
         if (message.seqNo == curRecSeqNo) {
             recListLock.acquire();
             recInOrderList.add(message);
             curRecSeqNo++;
             recListLock.release();
             return true;
-        } else if (message.seqNo > curRecSeqNo && message.seqNo < curRecSeqNo + dataWinSize) {
+        } else if (message.seqNo < curRecSeqNo) {
+            //for delayed trans
+            return true;
+        } else if (message.seqNo < curRecSeqNo + dataWinSize) {
             recListLock.acquire();
             recOutOfOrderList.add(message);
             recListLock.release();
