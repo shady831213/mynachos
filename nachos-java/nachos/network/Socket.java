@@ -106,13 +106,6 @@ abstract class SocketChannel {
         this.socket = socket;
     }
 
-    public void sendAck(SocketMessage message) {
-        try {
-            socket.send(new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo, new byte[0]));
-        } catch (MalformedPacketException e) {
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-    }
 }
 
 class SocketRx extends SocketChannel {
@@ -158,17 +151,30 @@ class SocketRx extends SocketChannel {
             recInOrderList.add(message);
             curRecSeqNo++;
             recListLock.release();
+            sendAck(message);
             return true;
         } else if (message.seqNo < curRecSeqNo) {
             //for delayed trans
+            sendAck(message);
             return true;
         } else if (message.seqNo < curRecSeqNo + winSize) {
             recListLock.acquire();
             recOutOfOrderList.add(message);
             recListLock.release();
+            sendAck(message);
             return true;
         }
         return false;
+    }
+
+    public boolean receiveSyn(SocketMessage message) {
+        sendAck(message);
+        return true;
+    }
+
+    public boolean receiveFin(SocketMessage message) {
+        sendAck(message);
+        return true;
     }
 
     public int read(byte[] buf, int offset, int length) {
@@ -196,6 +202,14 @@ class SocketRx extends SocketChannel {
         }
         recListLock.release();
         return amount;
+    }
+
+    public void sendAck(SocketMessage message) {
+        try {
+            socket.send(new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo, new byte[0]));
+        } catch (MalformedPacketException e) {
+            Lib.assertNotReached("bad SocketMessage !");
+        }
     }
 }
 
@@ -304,6 +318,18 @@ class SocketTx extends SocketChannel {
         return stpMessage;
     }
 
+    public SocketMessage sendSyn() {
+        SocketMessage message;
+        try {
+            message = new SocketMessage(false, false, false, true, 0, new byte[0]);
+        } catch (MalformedPacketException e) {
+            message = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
+        socket.send(message);
+        return message;
+    }
+
     public int write(byte[] buf, int offset, int length) {
         sendingListLock.acquire();
         int amount = 0;
@@ -391,7 +417,7 @@ public class Socket {
 
         //user event
         protected void connect() {
-            sendSyn();
+            tx.sendSyn();
             state = new SocketSynSent();
         }
 
@@ -400,7 +426,7 @@ public class Socket {
         protected boolean syn(SocketMessage message) {
             dstLink = message.message.packet.srcLink;
             dstPort = message.message.srcPort;
-            tx.sendAck(message);
+            rx.receiveSyn(message);
             canOpen.triggerEvent();
             state = new SocketEstablished();
             Lib.debug(dbgSocket, "get syn @ closed!");
@@ -411,7 +437,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.sendAck(message);
+            rx.receiveFin(message);
             return true;
         }
 
@@ -423,7 +449,7 @@ public class Socket {
             wd.start(sendingTimeout, new Runnable() {
                 @Override
                 public void run() {
-                    sendSyn();
+                    tx.sendSyn();
                 }
             }, -1);
         }
@@ -478,7 +504,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.sendAck(message);
+            rx.receiveSyn(message);
             return true;
         }
 
@@ -497,9 +523,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            if (rx.receiveData(message)) {
-                rx.sendAck(message);
-            }
+            rx.receiveData(message);
             return true;
         }
 
@@ -532,7 +556,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.sendAck(message);
+            rx.receiveSyn(message);
             return true;
         }
 
@@ -541,10 +565,7 @@ public class Socket {
                 return false;
             }
             Lib.debug(dbgSocket, "get data @ stpsent!");
-            if (rx.receiveData(message)) {
-                rx.sendAck(message);
-                Lib.debug(dbgSocket, "sent ack @ stpsent!");
-            }
+            rx.receiveData(message);
             return true;
         }
 
@@ -553,7 +574,7 @@ public class Socket {
                 return false;
             }
             wd.reset();
-            tx.sendAck(message);
+            rx.receiveFin(message);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -605,7 +626,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.sendAck(message);
+            rx.receiveFin(message);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -638,7 +659,7 @@ public class Socket {
                 return false;
             }
             wd.reset();
-            tx.sendAck(message);
+            rx.receiveFin(message);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -785,19 +806,6 @@ public class Socket {
     }
 
     //actions
-    private SocketMessage sendSyn() {
-        SocketMessage message;
-        try {
-            message = new SocketMessage(false, false, false, true, 0, new byte[0]);
-        } catch (MalformedPacketException e) {
-            message = null;
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-        send(message);
-        return message;
-    }
-
-
     public void send(SocketMessage message) {
         postOffice.send(this, message);
     }

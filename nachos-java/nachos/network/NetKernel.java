@@ -6,6 +6,8 @@ import nachos.userprog.*;
 import nachos.vm.*;
 import nachos.network.*;
 
+import java.lang.reflect.Array;
+
 /**
  * A kernel with network support.
  */
@@ -62,29 +64,51 @@ public class NetKernel extends VMKernel {
         Socket socket = new Socket(postOffice);
         OpenFile file = socket.connect(srcLink, dstPort);
         System.out.println("PING port " + dstPort + " from " + socket.srcPort);
-        byte[] data = Lib.bytesFromInt(0x5a5a);
-        file.write(data, 0, data.length);
-        file.close();
-        while (file.read(data, 0, data.length) <= 0) {
+        byte[] tdata, rdata;
+        tdata = new byte[200];
+        for (int i = 0; i < tdata.length; i++) {
+            tdata[i] = (byte) (i % 255);
         }
+        rdata = new byte[295];
 
+        file.write(tdata, 0, tdata.length);
+        file.close();
+        int rcnt = 0;
+        while (rcnt != rdata.length) {
+            rcnt += file.read(rdata, rcnt, rdata.length);
+            System.out.println("Client get " + rcnt + " data");
+        }
 
         long endTime = Machine.timer().getTime();
 
-        System.out.println("time=" + (endTime - startTime) + " ticks;Client get data " + Integer.toHexString(Lib.bytesToInt(data, 0)));
+        System.out.println("time=" + (endTime - startTime) + " ticks");
+        System.out.println("Client get data :");
+        for (int i = 0; i < rdata.length; i++) {
+            System.out.println("Client rdata " + i + " = " + rdata[i]);
+        }
     }
 
     private void pingServer() {
         Socket socket = new Socket(postOffice);
         OpenFile file = socket.accept(0);
         System.out.println("accept @ port " + 0 + " from " + socket.dstPort);
-        byte[] data;
-        data = new byte[4];
-        while (file.read(data, 0, data.length) <= 0) {
+        byte[] tdata, rdata;
+        rdata = new byte[200];
+        int rcnt = 0;
+        while (rcnt != rdata.length) {
+            rcnt += file.read(rdata, rcnt, rdata.length);
+            System.out.println("Server get " + rcnt + " data");
         }
-        System.out.println("Server get data " + Integer.toHexString(Lib.bytesToInt(data, 0)));
-        data = Lib.bytesFromInt(0xa5a5);
-        file.write(data, 0, data.length);
+        System.out.println("Server get data :");
+        for (int i = 0; i < rdata.length; i++) {
+            System.out.println("Server rdata " + i + " = " + rdata[i]);
+        }
+
+        tdata = new byte[295];
+        for (int i = 0; i < tdata.length; i++) {
+            tdata[i] = (byte) (255 - (i % 255));
+        }
+        file.write(tdata, 0, tdata.length);
         file.close();
     }
 
