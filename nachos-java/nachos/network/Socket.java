@@ -135,26 +135,25 @@ class SocketRx extends SocketChannel {
     }
 
     public boolean receiveData(SocketMessage message) {
-        recListLock.acquire();
-        while (!recOutOfOrderList.isEmpty()) {
-            SocketMessage m = recOutOfOrderList.peek();
-            if (m.seqNo != curRecSeqNo) {
-                break;
-            }
-            recInOrderList.add(m);
-            curRecSeqNo++;
-            recOutOfOrderList.remove(m);
+        if (message.seqNo < curRecSeqNo) {
+            //for delayed trans
+            sendAck(message);
+            return true;
         }
-        recListLock.release();
         if (message.seqNo == curRecSeqNo) {
             recListLock.acquire();
             recInOrderList.add(message);
             curRecSeqNo++;
+            while (!recOutOfOrderList.isEmpty()) {
+                SocketMessage m = recOutOfOrderList.peek();
+                if (m.seqNo != curRecSeqNo) {
+                    break;
+                }
+                recInOrderList.add(m);
+                curRecSeqNo++;
+                recOutOfOrderList.remove(m);
+            }
             recListLock.release();
-            sendAck(message);
-            return true;
-        } else if (message.seqNo < curRecSeqNo) {
-            //for delayed trans
             sendAck(message);
             return true;
         } else if (message.seqNo < curRecSeqNo + winSize) {
