@@ -113,11 +113,6 @@ class PostOfficeNew extends PostOffice {
         receiveHandlers[port] = handler;
     }
 
-    public void removeReceiveHandler(int port) {
-        Lib.assertTrue(port >= 0 && port < receiveHandlers.length);
-        receiveHandlers[port] = null;
-    }
-
     protected void postalDelivery() {
         while (true) {
             messageReceived.P();
@@ -146,14 +141,13 @@ class PostOfficeNew extends PostOffice {
     }
 }
 
-class SocketRx {
-    private PostOfficeNew postOffice;
+class SocketPostOffice {
+    final private PostOfficeNew postOffice;
     private Lock[] SocketListLock;
     private LinkedList<SocketNew>[] Sockets;
-    public Runnable receiveHandler;
     private static final char dbgNet = 'n';
 
-    SocketRx(PostOfficeNew postOffice) {
+    SocketPostOffice(PostOfficeNew postOffice) {
         this.postOffice = postOffice;
         SocketListLock = new Lock[MailMessage.portLimit];
         Sockets = new LinkedList[MailMessage.portLimit];
@@ -174,6 +168,25 @@ class SocketRx {
         SocketListLock[socket.srcPort].acquire();
         Sockets[socket.srcPort].add(socket);
         SocketListLock[socket.srcPort].release();
+    }
+
+    public int allocPort(int port) {
+        SocketListLock[port].acquire();
+        if (Sockets[port].isEmpty()) {
+            SocketListLock[port].release();
+            return port;
+        }
+        SocketListLock[port].release();
+        return -1;
+    }
+
+    public int allocPort() {
+        for (int port = 0; port < Sockets.length; port++) {
+            if (allocPort(port) != -1) {
+                return port;
+            }
+        }
+        return -1;
     }
 
     public void unbind(SocketNew socket) {
@@ -197,6 +210,17 @@ class SocketRx {
             }
         }
         SocketListLock[mail.dstPort].release();
+    }
+
+    public void send(SocketNew socket, SocketMessage message) {
+        MailMessage mailHeader;
+        try {
+            mailHeader = new MailMessage(socket.dstLink, socket.dstPort, Machine.networkLink().getLinkAddress(), socket.srcPort, new byte[0]);
+            message.sendMailMessage(mailHeader);
+        } catch (MalformedPacketException e) {
+            Lib.assertNotReached("get a bad mail!");
+        }
+        this.postOffice.send(message.message);
     }
 
 }
@@ -293,7 +317,7 @@ public class SocketNew {
         }
 
         private boolean fin(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             sendAck(message);
@@ -317,7 +341,7 @@ public class SocketNew {
 
         //protocol event
         private boolean synAck(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             wd.reset();
@@ -350,7 +374,7 @@ public class SocketNew {
 
         //protocol event
         private boolean syn(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             sendAck(message);
@@ -358,7 +382,7 @@ public class SocketNew {
         }
 
         private boolean ack(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             if (receiveAck(message)) {
@@ -376,7 +400,7 @@ public class SocketNew {
         }
 
         private boolean data(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             if (receiveData(message)) {
@@ -387,7 +411,7 @@ public class SocketNew {
 
 
         private boolean stp(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             stpSeqNo = message.seqNo;
@@ -422,7 +446,7 @@ public class SocketNew {
 
         //protocol event
         private boolean syn(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             sendAck(message);
@@ -430,7 +454,7 @@ public class SocketNew {
         }
 
         private boolean data(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             if (receiveData(message)) {
@@ -440,17 +464,18 @@ public class SocketNew {
         }
 
         private boolean fin(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             wd.reset();
             sendAck(message);
             state = new SocketClosed();
+            canClose.triggerEvent();
             return true;
         }
 
         private boolean stp(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             wd.reset();
@@ -481,7 +506,7 @@ public class SocketNew {
         //protocol event
 
         private boolean ack(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             if (receiveAck(message)) {
@@ -499,11 +524,12 @@ public class SocketNew {
         }
 
         private boolean fin(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             sendAck(message);
             state = new SocketClosed();
+            canClose.triggerEvent();
             return true;
         }
     }
@@ -535,33 +561,37 @@ public class SocketNew {
 
         //protocol event
         private boolean fin(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             wd.reset();
             sendAck(message);
             state = new SocketClosed();
+            canClose.triggerEvent();
             return true;
         }
 
         private boolean finAck(SocketMessage message) {
-            if (!checkLinkAndPort(message.message)) {
+            if (!checkLinkAndPort(message)) {
                 return false;
             }
             wd.reset();
             state = new SocketClosed();
+            canClose.triggerEvent();
             return true;
         }
 
 
     }
 
+    //filesystem interface
     private class File extends OpenFile {
         File() {
             super(null, "Socket Sever File");
         }
 
         public void close() {
+            SocketNew.this.close();
         }
 
         public int read(byte[] buf, int offset, int length) {
@@ -620,9 +650,11 @@ public class SocketNew {
     private SocketState state;
 
     private Event canOpen;
+    private Event canClose;
 
     private static int dataWinSize = 16;
     private static int sendingTimeout = 20000;
+    final private SocketPostOffice postOffice;
     final private watchdog wd = new watchdog(Stats.NetworkTime);
     int srcPort = -1;
     int dstPort = -1;
@@ -642,9 +674,11 @@ public class SocketNew {
     Condition2 sendingBusy;
     LinkedList<SocketMessage> sendingList;
 
-    public SocketNew() {
+    public SocketNew(SocketPostOffice postOffice) {
+        this.postOffice = postOffice;
         state = new SocketClosed();
         canOpen = new Event();
+        canClose = new Event();
 
         recOutOfOrderList = new PriorityQueue<>(dataWinSize, new Comparator<SocketMessage>() {
             @Override
@@ -661,8 +695,8 @@ public class SocketNew {
         sendingBusy = new Condition2(sendingListLock);
     }
 
-    private boolean checkLinkAndPort(MailMessage mail) {
-        return mail.srcPort == this.dstPort && mail.packet.srcLink == this.dstLink;
+    private boolean checkLinkAndPort(SocketMessage message) {
+        return message.message.srcPort == this.dstPort && message.message.packet.srcLink == this.dstLink;
     }
 
     //events
@@ -670,17 +704,19 @@ public class SocketNew {
         if (state.connect()) {
             this.File = new File();
         }
-        //this.srcPort = getPort()
+        this.srcPort = postOffice.allocPort();
+        Lib.assertTrue(this.srcPort != -1, "no free port!");
+        postOffice.bind(this);
         this.dstLink = dstLink;
         this.dstPort = dstPort;
         return this.File;
     }
 
     public OpenFile accept(int port) {
+        postOffice.bind(this);
         if (state.accept()) {
             this.File = new File();
         }
-        this.srcPort = port;
         return this.File;
     }
 
@@ -711,9 +747,23 @@ public class SocketNew {
         return state.data(message);
     }
 
+    public void close() {
+        state.close();
+        canClose.waitEvent();
+        //wait for a while, then remove socket from list
+        wd.start(sendingTimeout, new Runnable() {
+            @Override
+            public void run() {
+                postOffice.unbind(SocketNew.this);
+            }
+        }, 1);
+    }
+
     //actions
     private SocketMessage sendSyn() {
-        return new SocketMessage(false, false, false, true, 0);
+        SocketMessage message = new SocketMessage(false, false, false, true, 0);
+        postOffice.send(this, message);
+        return message;
     }
 
     //must atomic
@@ -723,6 +773,7 @@ public class SocketNew {
         waitSendListEmpty();
         finMessage = new SocketMessage(true, false, false, false, curSendSeqNo);
         sendingListLock.release();
+        postOffice.send(this, finMessage);
         return finMessage;
     }
 
@@ -733,6 +784,7 @@ public class SocketNew {
         waitSendListEmpty();
         stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo);
         sendingListLock.release();
+        postOffice.send(this, stpMessage);
         return stpMessage;
     }
 
@@ -785,13 +837,12 @@ public class SocketNew {
     private int sendData() {
         int burstSize = 0;
         sendingListLock.acquire();
-        //shift data in
         while (sendingList.size() < dataWinSize) {
             if (sendInputList.isEmpty()) {
                 break;
             }
             SocketMessage message = sendInputList.removeFirst();
-            //send(message);
+            postOffice.send(this, message);
             sendingList.add(message);
             burstSize++;
         }
@@ -805,7 +856,7 @@ public class SocketNew {
         sendingListLock.acquire();
         //send old data
         for (Iterator i = sendingList.iterator(); i.hasNext(); ) {
-            //send((SocketMessage)(i.next()));
+            postOffice.send(this, (SocketMessage) (i.next()));
             burstSize++;
         }
         sendingListLock.release();
@@ -819,7 +870,7 @@ public class SocketNew {
     }
 
     private void sendAck(SocketMessage message) {
-        //send(new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo));
+        postOffice.send(this, new SocketMessage(message.fin, message.stp, true, message.syn, message.seqNo));
     }
 
 }
