@@ -107,12 +107,10 @@ public class Socket {
         }
 
         //user event
-        private boolean connect() {
-            return false;
+        private void connect() {
         }
 
-        private boolean accept() {
-            return false;
+        private void accept() {
         }
 
         private void close() {
@@ -187,16 +185,14 @@ public class Socket {
         }
 
         //user event
-        private boolean connect() {
+        private void connect() {
             sendSyn();
             state = new SocketSynSent();
             canOpen.waitEvent();
-            return true;
         }
 
-        private boolean accept() {
+        private void accept() {
             canOpen.waitEvent();
-            return true;
         }
 
         //protocol event
@@ -600,9 +596,9 @@ public class Socket {
 
     //events
     public OpenFile connect(int dstLink, int dstPort) {
-        if (state.connect()) {
-            this.File = new File();
-        }
+        Lib.assertTrue(state instanceof SocketClosed);
+        state.connect();
+        this.File = new File();
         this.srcPort = postOffice.allocPort();
         Lib.assertTrue(this.srcPort != -1, "no free port!");
         postOffice.bind(this);
@@ -612,14 +608,15 @@ public class Socket {
     }
 
     public OpenFile accept(int port) {
+        Lib.assertTrue(state instanceof SocketClosed);
         postOffice.bind(this);
-        if (state.accept()) {
-            this.File = new File();
-        }
+        state.accept();
+        this.File = new File();
         return this.File;
     }
 
     public void close() {
+        Lib.assertTrue(state instanceof SocketEstablished || state instanceof SocketStpRcvd);
         state.close();
         canClose.waitEvent();
         postOffice.unbind(Socket.this);
