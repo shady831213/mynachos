@@ -764,8 +764,7 @@ public class Socket {
 
     public OpenFile accept(int port) {
         Lib.assertTrue(state instanceof SocketClosed);
-        this.srcPort = postOffice.allocPort(port);
-        Lib.assertTrue(this.srcPort != -1, "port " + port + " is not free!");
+        this.srcPort = port;
         postOffice.bind(this);
         state.accept();
         canOpen.waitEvent();
