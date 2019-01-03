@@ -427,6 +427,7 @@ public class Socket {
         protected void connect() {
             tx.sendSyn();
             state = new SocketSynSent();
+            //System.out.println("send syn from @ srcPort " + srcPort + " dstport " + dstPort);
         }
 
         //protocol event
@@ -437,7 +438,8 @@ public class Socket {
             rx.receiveSyn(message);
             canOpen.triggerEvent();
             state = new SocketEstablished();
-            Lib.debug(dbgSocket, "get syn @ closed!");
+            //Lib.debug(dbgSocket, "get syn @ closed!");
+            //System.out.println("get syn @closed srcPort = " + srcPort + " dstPort = " + dstPort);
             return true;
         }
 
@@ -698,9 +700,6 @@ public class Socket {
 
         public int read(byte[] buf, int offset, int length) {
             int amount = state.read(buf, offset, length);
-            if (amount == 0) {
-                Lib.debug(dbgSocket, "cur state = " + state.getClass());
-            }
             return amount;
         }
 
@@ -750,9 +749,8 @@ public class Socket {
     //events
     public OpenFile connect(int dstLink, int dstPort) {
         Lib.assertTrue(state instanceof SocketClosed);
-        this.srcPort = postOffice.allocPort();
+        boolean binded = postOffice.bind(this);
         Lib.assertTrue(this.srcPort != -1, "no free port!");
-        postOffice.bind(this);
         this.dstLink = dstLink;
         this.dstPort = dstPort;
         state.connect();
@@ -764,8 +762,7 @@ public class Socket {
 
     public OpenFile accept(int port) {
         Lib.assertTrue(state instanceof SocketClosed);
-        this.srcPort = port;
-        postOffice.bind(this);
+        postOffice.bind(this, port);
         state.accept();
         canOpen.waitEvent();
         this.File = new File();
@@ -783,6 +780,7 @@ public class Socket {
 
     public boolean receive(SocketMessage message) {
         Lib.debug(dbgSocket, "current state :" + state.getClass());
+        Lib.debug(dbgSocket, "from port " + message.message.srcPort + " to port " + message.message.dstPort + " @ srcPort: " + srcPort + " dstPort: " + dstPort);
         //syn/synack
         if (message.syn) {
             if (message.ack) {

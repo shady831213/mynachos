@@ -31,30 +31,27 @@ public class SocketPostOffice {
         }
     }
 
-    public void bind(Socket socket) {
-        SocketListLock[socket.srcPort].acquire();
-        Sockets[socket.srcPort].add(socket);
-        SocketListLock[socket.srcPort].release();
-    }
-
-    public int allocPort(int port) {
-        SocketListLock[port].acquire();
-        if (Sockets[port].isEmpty()) {
-            SocketListLock[port].release();
-            return port;
-        }
-        SocketListLock[port].release();
-        return -1;
-    }
-
-    public int allocPort() {
+    public boolean bind(Socket socket) {
         for (int port = 0; port < Sockets.length; port++) {
-            if (allocPort(port) != -1) {
-                return port;
+            SocketListLock[port].acquire();
+            if (Sockets[port].isEmpty()) {
+                socket.srcPort = port;
+                Sockets[port].add(socket);
+                SocketListLock[port].release();
+                return true;
             }
+            SocketListLock[port].release();
         }
-        return -1;
+        return false;
     }
+
+    public void bind(Socket socket, int port) {
+        SocketListLock[port].acquire();
+        socket.srcPort = port;
+        Sockets[port].add(socket);
+        SocketListLock[port].release();
+    }
+
 
     public void unbind(Socket socket) {
         SocketListLock[socket.srcPort].acquire();
@@ -70,6 +67,9 @@ public class SocketPostOffice {
             Lib.assertNotReached("get a bad mail!");
         }
         SocketListLock[mail.dstPort].acquire();
+//        if (message.syn) {
+//            System.out.println("get syn from port " + message.message.srcPort + " to port " + message.message.dstPort);
+//        }
         for (Iterator i = Sockets[mail.dstPort].iterator(); i.hasNext(); ) {
             if (((Socket) i.next()).receive(message)) {
                 Lib.debug(dbgSocket, "valid message!");
