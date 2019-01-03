@@ -8,7 +8,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 
 public class WatchdogTimer {
-    LinkedList<WatchdogNew> handlers;
+    LinkedList<Watchdog> handlers;
     final private int period;
     final Lock lock = new Lock();
 
@@ -23,13 +23,13 @@ public class WatchdogTimer {
         }).fork();
     }
 
-    public void addHandler(WatchdogNew handler) {
+    public void addHandler(Watchdog handler) {
         lock.acquire();
         handlers.add(handler);
         lock.release();
     }
 
-    public void removeHandler(WatchdogNew handler) {
+    public void removeHandler(Watchdog handler) {
         lock.acquire();
         handlers.remove(handler);
         lock.release();
@@ -41,7 +41,7 @@ public class WatchdogTimer {
             ThreadedKernel.alarm.waitUntil(period);
             lock.acquire();
             for (Iterator i = handlers.iterator(); i.hasNext(); ) {
-                WatchdogNew wd = (WatchdogNew) i.next();
+                Watchdog wd = (Watchdog) i.next();
                 wd.handle();
                 if (wd.expired()) {
                     i.remove();

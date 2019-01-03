@@ -26,6 +26,7 @@ public class NetKernel extends VMKernel {
         super.initialize(args);
 
         postOffice = new SocketPostOffice(new PostOfficeExt());
+        wdt = new WatchdogTimer(Stats.NetworkTime);
     }
 
     /**
@@ -97,7 +98,7 @@ public class NetKernel extends VMKernel {
     private void ping(int dstPort) {
         int srcLink = Machine.networkLink().getLinkAddress();
 
-        Socket socket = new Socket(postOffice);
+        Socket socket = new Socket(postOffice, wdt);
         OpenFile file = socket.connect(srcLink, dstPort);
         byte[] tdata, rdata;
         tdata = new byte[456];
@@ -118,7 +119,7 @@ public class NetKernel extends VMKernel {
     }
 
     private void pingServer() {
-        Socket socket = new Socket(postOffice);
+        Socket socket = new Socket(postOffice, wdt);
         OpenFile file = socket.accept(0);
         byte[] tdata, rdata;
         rdata = new byte[456];
@@ -153,6 +154,7 @@ public class NetKernel extends VMKernel {
     }
 
     public static SocketPostOffice postOffice;
+    public static WatchdogTimer wdt;
 
     // dummy variables to make javac smarter
     private static NetProcess dummy1 = null;

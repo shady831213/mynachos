@@ -2,13 +2,13 @@ package nachos.network;
 
 import nachos.machine.Machine;
 
-public class WatchdogNew {
+public class Watchdog {
     private long time;
     private long startTime;
     private Runnable timeoutHandler;
     private int repeat;
 
-    WatchdogNew(int time, Runnable timeoutHandler) {
+    Watchdog(int time, Runnable timeoutHandler) {
         this.time = time;
         this.timeoutHandler = timeoutHandler;
         this.repeat = -1;
@@ -37,7 +37,7 @@ public class WatchdogNew {
     }
 
     public void handle() {
-        if (startTime + time > Machine.timer().getTime()) {
+        if (startTime + time < Machine.timer().getTime()) {
             startTime = Machine.timer().getTime();
             timeoutHandler.run();
             if (repeat > 0) {

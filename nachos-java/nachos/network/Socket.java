@@ -44,61 +44,6 @@ class Event {
     }
 }
 
-class Watchdog {
-    final private int period;
-    private boolean clear;
-    private KThread timeoutT;
-    Event started;
-    Event ended;
-
-    Watchdog(int period) {
-        this.period = period;
-        started = new Event();
-        ended = new Event();
-    }
-
-    //must call after start!
-    public void reset() {
-        started.waitEvent();
-        clear = true;
-        ended.waitEvent();
-    }
-
-    public KThread start(int time, Runnable timeoutHandler, int repeat) {
-        timeoutT = new KThread(new Runnable() {
-            @Override
-            public void run() {
-                started.triggerEvent();
-                _timeout(time, timeoutHandler, repeat);
-                ended.triggerEvent();
-            }
-        });
-        timeoutT.fork();
-        return timeoutT;
-    }
-
-    //if repeat <0, forever
-    private void _timeout(int time, Runnable timeoutHandler, int repeat) {
-        int repeatCnt = repeat;
-        while (repeatCnt != 0) {
-            int watchdog = time;
-            while (watchdog > 0) {
-                ThreadedKernel.alarm.waitUntil(period);
-                if (clear) {
-                    clear = false;
-                    return;
-                }
-                watchdog -= period;
-            }
-            timeoutHandler.run();
-            if (repeatCnt > 0) {
-                repeatCnt--;
-            }
-        }
-    }
-
-}
-
 abstract class SocketChannel {
     final protected Socket socket;
 
@@ -226,7 +171,34 @@ class SocketTx extends SocketChannel {
     private Condition2 sendingBusy;
     private LinkedList<SocketMessage> sendingList;
     private static final char dbgSocket = 's';
+    private static int sendingTimeout = 20000;
+    final public Watchdog resendSynWd = new Watchdog(sendingTimeout, new Runnable() {
+        @Override
+        public void run() {
+            sendSyn();
+        }
+    });
 
+    final public Watchdog resendStpWd = new Watchdog(sendingTimeout, new Runnable() {
+        @Override
+        public void run() {
+            sendStp();
+        }
+    });
+
+    final public Watchdog resendDataWd = new Watchdog(sendingTimeout, new Runnable() {
+        @Override
+        public void run() {
+            reSendData();
+        }
+    });
+
+    final public Watchdog resendFinWd = new Watchdog(sendingTimeout, new Runnable() {
+        @Override
+        public void run() {
+            sendFin();
+        }
+    });
 
     SocketTx(Socket socket, int winSize) {
         super(socket);
@@ -426,6 +398,7 @@ public class Socket {
         //user event
         protected void connect() {
             tx.sendSyn();
+            tx.resendSynWd.start(wdt);
             state = new SocketSynSent();
             //System.out.println("send syn from @ srcPort " + srcPort + " dstport " + dstPort);
         }
@@ -456,12 +429,6 @@ public class Socket {
     class SocketSynSent extends SocketState {
 
         SocketSynSent() {
-            wd.start(sendingTimeout, new Runnable() {
-                @Override
-                public void run() {
-                    tx.sendSyn();
-                }
-            }, -1);
         }
 
         //user event
@@ -471,7 +438,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            wd.reset();
+            tx.resendSynWd.expire(wdt);
             canOpen.triggerEvent();
             state = new SocketEstablished();
             return true;
@@ -488,18 +455,14 @@ public class Socket {
 
         private void sendData() {
             if (tx.sendData() > 0) {
-                wd.start(sendingTimeout, new Runnable() {
-                    @Override
-                    public void run() {
-                        tx.reSendData();
-                    }
-                }, -1);
+                tx.resendDataWd.start(wdt);
             }
         }
 
         //user event
         protected void close() {
             tx.sendStp();
+            tx.resendStpWd.start(wdt);
             state = new SocketStpSent();
         }
 
@@ -523,7 +486,7 @@ public class Socket {
                 return false;
             }
             if (tx.receiveAck(message)) {
-                wd.reset();
+                tx.resendDataWd.expire(wdt);
                 sendData();
             }
             return true;
@@ -552,12 +515,6 @@ public class Socket {
     class SocketStpSent extends SocketState {
         //if both enter this state, and both stp missed
         SocketStpSent() {
-            wd.start(sendingTimeout, new Runnable() {
-                @Override
-                public void run() {
-                    tx.sendStp();
-                }
-            }, -1);
         }
 
         //user event
@@ -576,6 +533,8 @@ public class Socket {
             }
             Lib.debug(dbgSocket, "get data @ stpsent!");
             rx.receiveData(message);
+            tx.resendStpWd.expire(wdt);
+            tx.resendStpWd.start(wdt);
             return true;
         }
 
@@ -583,10 +542,10 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            wd.reset();
-            rx.receiveFin(message);
-            state = new SocketClosed();
-            canClose.triggerEvent();
+            tx.resendStpWd.expire(wdt);
+            tx.sendFin();
+            tx.resendFinWd.start(wdt);
+            state = new SocketClosing();
             return true;
         }
 
@@ -594,8 +553,9 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            wd.reset();
+            tx.resendStpWd.expire(wdt);
             tx.sendFin();
+            tx.resendFinWd.start(wdt);
             state = new SocketClosing();
             return true;
         }
@@ -609,6 +569,7 @@ public class Socket {
         //user event
         protected void close() {
             tx.sendFin();
+            tx.resendFinWd.start(wdt);
             state = new SocketClosing();
         }
 
@@ -619,14 +580,9 @@ public class Socket {
                 return false;
             }
             if (tx.receiveAck(message)) {
-                wd.reset();
+                tx.resendDataWd.expire(wdt);
                 if (tx.sendData() > 0) {
-                    wd.start(sendingTimeout, new Runnable() {
-                        @Override
-                        public void run() {
-                            tx.reSendData();
-                        }
-                    }, -1);
+                    tx.resendDataWd.start(wdt);
                 }
             }
             return true;
@@ -636,31 +592,16 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            rx.receiveFin(message);
-            state = new SocketClosed();
-            canClose.triggerEvent();
+            tx.sendFin();
+            tx.resendFinWd.start(wdt);
+            state = new SocketClosing();
             return true;
         }
     }
 
 
     class SocketClosing extends SocketState {
-
         SocketClosing() {
-            //if 3 times timeout, may be the endpoint has been closed and never response for fin package, so force close.
-            wd.start(sendingTimeout, new Runnable() {
-                int cnt = 3;
-
-                @Override
-                public void run() {
-                    tx.sendFin();
-                    cnt--;
-                    if (cnt == 0) {
-                        state = new SocketClosed();
-                        canClose.triggerEvent();
-                    }
-                }
-            }, 3);
         }
 
         //protocol event
@@ -668,7 +609,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            wd.reset();
+            tx.resendFinWd.expire(wdt);
             rx.receiveFin(message);
             state = new SocketClosed();
             canClose.triggerEvent();
@@ -679,7 +620,7 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            wd.reset();
+            tx.resendFinWd.expire(wdt);
             state = new SocketClosed();
             canClose.triggerEvent();
             return true;
@@ -719,7 +660,7 @@ public class Socket {
     private static int dataWinSize = 16;
     private static int sendingTimeout = 20000;
     final private SocketPostOffice postOffice;
-    final private Watchdog wd = new Watchdog(Stats.NetworkTime);
+    final private WatchdogTimer wdt;
     int srcPort = -1;
     int dstPort = -1;
     int dstLink = -1;
@@ -731,8 +672,9 @@ public class Socket {
     //for send
     private SocketTx tx;
 
-    public Socket(SocketPostOffice postOffice) {
+    public Socket(SocketPostOffice postOffice, WatchdogTimer wdt) {
         this.postOffice = postOffice;
+        this.wdt = wdt;
         state = new SocketClosed();
         canOpen = new Event();
         canClose = new Event();
@@ -775,7 +717,8 @@ public class Socket {
         state.close();
         canClose.waitEvent();
         postOffice.unbind(Socket.this);
-        Lib.debug(dbgSocket, "closed!");
+        //Lib.debug(dbgSocket, "closed!");
+        //System.out.println("closed! @ srcPort: " + srcPort + " dstPort: " + dstPort);
     }
 
     public boolean receive(SocketMessage message) {
