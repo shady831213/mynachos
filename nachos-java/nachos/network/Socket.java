@@ -552,6 +552,7 @@ public class Socket {
             return true;
         }
 
+        //both active close, use fin as response, no stpack
         protected boolean stp(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
@@ -561,7 +562,6 @@ public class Socket {
                 @Override
                 public void run() {
                     tx.sendFin();
-                    tx.resendFinWd.start(wdt);
                 }
             });
             return true;
@@ -642,6 +642,14 @@ public class Socket {
             return true;
         }
 
+        protected boolean stp(SocketMessage message) {
+            if (!checkLinkAndPort(message)) {
+                return false;
+            }
+            tx.sendFin();
+            return true;
+        }
+
     }
 
     class SocketClosing2 extends SocketState {
@@ -670,17 +678,16 @@ public class Socket {
             return true;
         }
 
-        protected boolean finAck(SocketMessage message) {
+        protected boolean stp(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.resendFinWd.expire(wdt);
+            tx.sendFin();
             wd.expire(wdt);
-            System.out.println("closed @ SocketClosing2 srcPort = " + srcPort + " dstPort = " + dstPort);
-            canClose.triggerEvent();
-            state = new SocketClosed();
+            wd.start(wdt, 1);
             return true;
         }
+
     }
 
     //filesystem interface
