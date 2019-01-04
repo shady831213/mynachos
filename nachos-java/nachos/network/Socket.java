@@ -127,6 +127,11 @@ class SocketRx extends SocketChannel {
         return true;
     }
 
+    public boolean receiveStp(SocketMessage message) {
+        sendAck(message);
+        return true;
+    }
+
     public int read(byte[] buf, int offset, int length) {
         int amount = 0;
         int pos = offset;
@@ -259,24 +264,23 @@ class SocketTx extends SocketChannel {
         return burstSize;
     }
 
-    private void waitSendListEmpty() {
+    public void waitSendListEmpty() {
+        sendingListLock.acquire();
         while (!sendInputList.isEmpty() || !sendingList.isEmpty()) {
             sendingBusy.sleep();
         }
+        sendingListLock.release();
     }
 
     //must atomic
     public SocketMessage sendFin() {
         SocketMessage finMessage;
-        sendingListLock.acquire();
-        waitSendListEmpty();
         try {
             finMessage = new SocketMessage(true, false, false, false, curSendSeqNo, new byte[0]);
         } catch (MalformedPacketException e) {
             finMessage = null;
             Lib.assertNotReached("bad SocketMessage !");
         }
-        sendingListLock.release();
         socket.send(finMessage);
         return finMessage;
     }
@@ -284,8 +288,6 @@ class SocketTx extends SocketChannel {
     //must atomic
     public SocketMessage sendStp() {
         SocketMessage stpMessage;
-        sendingListLock.acquire();
-        waitSendListEmpty();
         try {
             stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo, new byte[0]);
 
@@ -293,7 +295,6 @@ class SocketTx extends SocketChannel {
             stpMessage = null;
             Lib.assertNotReached("bad SocketMessage !");
         }
-        sendingListLock.release();
         socket.send(stpMessage);
         return stpMessage;
     }
@@ -347,8 +348,8 @@ public class Socket {
         protected void accept() {
         }
 
-        protected void close() {
-
+        protected boolean close() {
+            return false;
         }
 
         protected int read(byte[] buf, int offset, int length) {
@@ -377,6 +378,10 @@ public class Socket {
         }
 
         protected boolean stp(SocketMessage message) {
+            return false;
+        }
+
+        protected boolean stpAck(SocketMessage message) {
             return false;
         }
 
@@ -415,15 +420,6 @@ public class Socket {
             //System.out.println("get syn @closed srcPort = " + srcPort + " dstPort = " + dstPort);
             return true;
         }
-
-        protected boolean fin(SocketMessage message) {
-            if (!checkLinkAndPort(message)) {
-                return false;
-            }
-            rx.receiveFin(message);
-            return true;
-        }
-
     }
 
     class SocketSynSent extends SocketState {
@@ -441,13 +437,13 @@ public class Socket {
             tx.resendSynWd.expire(wdt);
             canOpen.triggerEvent();
             state = new SocketEstablished();
+            //System.out.println("connect @SocketSynSent srcPort = " + srcPort + " dstPort = " + dstPort);
             return true;
         }
     }
 
 
     class SocketEstablished extends SocketState {
-
 
         SocketEstablished() {
 
@@ -460,10 +456,15 @@ public class Socket {
         }
 
         //user event
-        protected void close() {
-            tx.sendStp();
-            tx.resendStpWd.start(wdt);
-            state = new SocketStpSent();
+        protected boolean close() {
+            tx.waitSendListEmpty();
+            return changeState(this, new SocketStpSent(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.sendStp();
+                    tx.resendStpWd.start(wdt);
+                }
+            });
         }
 
         protected int write(byte[] buf, int offset, int length) {
@@ -505,8 +506,13 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            rx.setStpSeqNo(message.seqNo);
-            state = new SocketStpRcvd();
+            changeState(this, new SocketStpRcvd(), new Runnable() {
+                @Override
+                public void run() {
+                    rx.setStpSeqNo(message.seqNo);
+                    rx.receiveStp(message);
+                }
+            });
             return true;
         }
     }
@@ -533,18 +539,15 @@ public class Socket {
             }
             Lib.debug(dbgSocket, "get data @ stpsent!");
             rx.receiveData(message);
-            tx.resendStpWd.expire(wdt);
-            tx.resendStpWd.start(wdt);
             return true;
         }
 
-        protected boolean fin(SocketMessage message) {
+        protected boolean stpAck(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
             tx.resendStpWd.expire(wdt);
-            tx.sendFin();
-            tx.resendFinWd.start(wdt);
+            //System.out.println("enter SocketClosing because stpAck srcPort = " + srcPort + " dstPort = " + dstPort);
             state = new SocketClosing();
             return true;
         }
@@ -553,10 +556,14 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.resendStpWd.expire(wdt);
-            tx.sendFin();
-            tx.resendFinWd.start(wdt);
-            state = new SocketClosing();
+            //System.out.println("enter SocketClosing because stp srcPort = " + srcPort + " dstPort = " + dstPort);
+            changeState(this, new SocketClosing(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.sendFin();
+                    tx.resendFinWd.start(wdt);
+                }
+            });
             return true;
         }
     }
@@ -567,12 +574,12 @@ public class Socket {
         }
 
         //user event
-        protected void close() {
+        protected boolean close() {
+            tx.waitSendListEmpty();
             tx.sendFin();
             tx.resendFinWd.start(wdt);
-            state = new SocketClosing();
+            return true;
         }
-
         //protocol event
 
         protected boolean ack(SocketMessage message) {
@@ -588,13 +595,22 @@ public class Socket {
             return true;
         }
 
-        protected boolean fin(SocketMessage message) {
+        protected boolean stp(SocketMessage message) {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.sendFin();
-            tx.resendFinWd.start(wdt);
-            state = new SocketClosing();
+            rx.receiveStp(message);
+            return true;
+        }
+
+        protected boolean finAck(SocketMessage message) {
+            if (!checkLinkAndPort(message)) {
+                return false;
+            }
+            System.out.println("closed @ SocketLastAck srcPort = " + srcPort + " dstPort = " + dstPort);
+            tx.resendFinWd.expire(wdt);
+            state = new SocketClosed();
+            canClose.triggerEvent();
             return true;
         }
     }
@@ -602,6 +618,45 @@ public class Socket {
 
     class SocketClosing extends SocketState {
         SocketClosing() {
+            System.out.println("enter SocketClosing srcPort = " + srcPort + " dstPort = " + dstPort);
+        }
+
+        //protocol event
+
+        protected boolean data(SocketMessage message) {
+            if (!checkLinkAndPort(message)) {
+                return false;
+            }
+            Lib.debug(dbgSocket, "get data @ stpsent!");
+            rx.receiveData(message);
+            return true;
+        }
+
+        protected boolean fin(SocketMessage message) {
+            if (!checkLinkAndPort(message)) {
+                return false;
+            }
+            tx.resendStpWd.expire(wdt);
+            rx.receiveFin(message);
+            state = new SocketClosing2();
+            return true;
+        }
+
+    }
+
+    class SocketClosing2 extends SocketState {
+        final Watchdog wd = new Watchdog(sendingTimeout * 200, new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("closed @ SocketClosing2 srcPort = " + srcPort + " dstPort = " + dstPort);
+                canClose.triggerEvent();
+                state = new SocketClosed();
+            }
+        });
+
+        SocketClosing2() {
+            System.out.println("enter SocketClosing2 srcPort = " + srcPort + " dstPort = " + dstPort);
+            wd.start(wdt, 1);
         }
 
         //protocol event
@@ -609,10 +664,9 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.resendFinWd.expire(wdt);
             rx.receiveFin(message);
-            state = new SocketClosed();
-            canClose.triggerEvent();
+            wd.expire(wdt);
+            wd.start(wdt, 1);
             return true;
         }
 
@@ -621,12 +675,12 @@ public class Socket {
                 return false;
             }
             tx.resendFinWd.expire(wdt);
-            state = new SocketClosed();
+            wd.expire(wdt);
+            System.out.println("closed @ SocketClosing2 srcPort = " + srcPort + " dstPort = " + dstPort);
             canClose.triggerEvent();
+            state = new SocketClosed();
             return true;
         }
-
-
     }
 
     //filesystem interface
@@ -691,7 +745,7 @@ public class Socket {
     //events
     public OpenFile connect(int dstLink, int dstPort) {
         Lib.assertTrue(state instanceof SocketClosed);
-        boolean binded = postOffice.bind(this);
+        postOffice.bind(this);
         Lib.assertTrue(this.srcPort != -1, "no free port!");
         this.dstLink = dstLink;
         this.dstPort = dstPort;
@@ -714,7 +768,7 @@ public class Socket {
 
     public void close() {
         Lib.assertTrue(state instanceof SocketEstablished || state instanceof SocketStpRcvd, "state is " + state.getClass());
-        state.close();
+        while (!state.close()) ;
         canClose.waitEvent();
         postOffice.unbind(Socket.this);
         //Lib.debug(dbgSocket, "closed!");
@@ -744,6 +798,10 @@ public class Socket {
         }
         //stp
         if (message.stp) {
+            if (message.ack) {
+                Lib.debug(dbgSocket, "get stp ack!");
+                return state.stpAck(message);
+            }
             Lib.debug(dbgSocket, "get stp!");
             return state.stp(message);
         }
@@ -758,6 +816,22 @@ public class Socket {
     }
 
     //actions
+    private boolean changeState(SocketState curState, SocketState nxtState, Runnable action) {
+        if (changeState(curState, nxtState)) {
+            action.run();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean changeState(SocketState curState, SocketState nxtState) {
+        if (curState == state) {
+            state = nxtState;
+            return true;
+        }
+        return false;
+    }
+
     public void send(SocketMessage message) {
         postOffice.send(this, message);
     }

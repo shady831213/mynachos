@@ -55,6 +55,7 @@ public class NetKernel extends VMKernel {
                 alarm.waitUntil(100);
                 // ping this machine first
                 ping(0);
+                serverThread.join();
             }
         }));
 
@@ -85,6 +86,9 @@ public class NetKernel extends VMKernel {
                         }
                     });
                     clientThread[i].fork();
+                }
+                for (int i = 0; i < clientThread.length; i++) {
+                    serverThread[i].join();
                 }
                 for (int i = 0; i < clientThread.length; i++) {
                     clientThread[i].join();
