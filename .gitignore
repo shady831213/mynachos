@@ -1,5 +1,5 @@
 **/.idea
-nachos-java/nachos/proj*
+nachos-java/nachos/proj*/nachos
 *.iml
 *.o
 *.coff
