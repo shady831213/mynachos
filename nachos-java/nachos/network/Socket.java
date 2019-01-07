@@ -402,9 +402,13 @@ public class Socket {
 
         //user event
         protected void connect() {
-            tx.sendSyn();
-            tx.resendSynWd.start(wdt);
-            state = new SocketSynSent();
+            changeState(this, new SocketSynSent(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.sendSyn();
+                    tx.resendSynWd.start(wdt);
+                }
+            });
             //System.out.println("send syn from @ srcPort " + srcPort + " dstport " + dstPort);
         }
 
@@ -413,9 +417,14 @@ public class Socket {
         protected boolean syn(SocketMessage message) {
             dstLink = message.message.packet.srcLink;
             dstPort = message.message.srcPort;
-            rx.receiveSyn(message);
-            canOpen.triggerEvent();
-            state = new SocketEstablished();
+            changeState(this, new SocketEstablished(), new Runnable() {
+                @Override
+                public void run() {
+                    rx.receiveSyn(message);
+                    canOpen.triggerEvent();
+                }
+            });
+
             //Lib.debug(dbgSocket, "get syn @ closed!");
             //System.out.println("get syn @closed srcPort = " + srcPort + " dstPort = " + dstPort);
             return true;
@@ -434,9 +443,14 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.resendSynWd.expire(wdt);
-            canOpen.triggerEvent();
-            state = new SocketEstablished();
+            changeState(this, new SocketEstablished(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.resendSynWd.expire(wdt);
+                    canOpen.triggerEvent();
+                }
+            });
+
             //System.out.println("connect @SocketSynSent srcPort = " + srcPort + " dstPort = " + dstPort);
             return true;
         }
@@ -546,9 +560,14 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.resendStpWd.expire(wdt);
+            changeState(this, new SocketClosing(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.resendStpWd.expire(wdt);
+
+                }
+            });
             //System.out.println("enter SocketClosing because stpAck srcPort = " + srcPort + " dstPort = " + dstPort);
-            state = new SocketClosing();
             return true;
         }
 
@@ -608,9 +627,13 @@ public class Socket {
                 return false;
             }
             System.out.println("closed @ SocketLastAck srcPort = " + srcPort + " dstPort = " + dstPort);
-            tx.resendFinWd.expire(wdt);
-            state = new SocketClosed();
-            canClose.triggerEvent();
+            changeState(this, new SocketClosed(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.resendFinWd.expire(wdt);
+                    canClose.triggerEvent();
+                }
+            });
             return true;
         }
     }
@@ -636,9 +659,13 @@ public class Socket {
             if (!checkLinkAndPort(message)) {
                 return false;
             }
-            tx.resendStpWd.expire(wdt);
-            rx.receiveFin(message);
-            state = new SocketClosing2();
+            changeState(this, new SocketClosing2(), new Runnable() {
+                @Override
+                public void run() {
+                    tx.resendStpWd.expire(wdt);
+                    rx.receiveFin(message);
+                }
+            });
             return true;
         }
 
@@ -657,8 +684,12 @@ public class Socket {
             @Override
             public void run() {
                 System.out.println("closed @ SocketClosing2 srcPort = " + srcPort + " dstPort = " + dstPort);
-                canClose.triggerEvent();
-                state = new SocketClosed();
+                changeState(SocketClosing2.this, new SocketClosed(), new Runnable() {
+                    @Override
+                    public void run() {
+                        canClose.triggerEvent();
+                    }
+                });
             }
         });
 
@@ -714,6 +745,7 @@ public class Socket {
     private OpenFile File;
 
     private SocketState state;
+    final Lock stateLock = new Lock();
 
     private Event canOpen;
     private Event canClose;
@@ -832,10 +864,13 @@ public class Socket {
     }
 
     private boolean changeState(SocketState curState, SocketState nxtState) {
+        stateLock.acquire();
         if (curState == state) {
             state = nxtState;
+            stateLock.release();
             return true;
         }
+        stateLock.release();
         return false;
     }
 
