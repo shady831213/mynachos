@@ -208,12 +208,14 @@ class SocketTx extends SocketChannel {
     SocketTx(Socket socket, int winSize) {
         super(socket);
         this.winSize = winSize;
+        curSendSeqNo = 0;
         sendInputList = new LinkedList<>();
         sendingList = new LinkedList<>();
         sendingListLock = new Lock();
         sendingBusy = new Condition2(sendingListLock);
     }
 
+    //data channel
     public boolean receiveAck(SocketMessage message) {
         sendingListLock.acquire();
         boolean removed = false;
@@ -272,45 +274,6 @@ class SocketTx extends SocketChannel {
         sendingListLock.release();
     }
 
-    //must atomic
-    public SocketMessage sendFin() {
-        SocketMessage finMessage;
-        try {
-            finMessage = new SocketMessage(true, false, false, false, curSendSeqNo, new byte[0]);
-        } catch (MalformedPacketException e) {
-            finMessage = null;
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-        socket.send(finMessage);
-        return finMessage;
-    }
-
-    //must atomic
-    public SocketMessage sendStp() {
-        SocketMessage stpMessage;
-        try {
-            stpMessage = new SocketMessage(false, true, false, false, curSendSeqNo, new byte[0]);
-
-        } catch (MalformedPacketException e) {
-            stpMessage = null;
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-        socket.send(stpMessage);
-        return stpMessage;
-    }
-
-    public SocketMessage sendSyn() {
-        SocketMessage message;
-        try {
-            message = new SocketMessage(false, false, false, true, 0, new byte[0]);
-        } catch (MalformedPacketException e) {
-            message = null;
-            Lib.assertNotReached("bad SocketMessage !");
-        }
-        socket.send(message);
-        return message;
-    }
-
     public int write(byte[] buf, int offset, int length) {
         sendingListLock.acquire();
         int amount = 0;
@@ -332,6 +295,33 @@ class SocketTx extends SocketChannel {
         sendingListLock.release();
         return amount;
     }
+
+    //command channels
+    public SocketMessage sendCmd(boolean fin, boolean stp, boolean syn) {
+        SocketMessage message;
+        try {
+            message = new SocketMessage(fin, stp, false, syn, curSendSeqNo, new byte[0]);
+        } catch (MalformedPacketException e) {
+            message = null;
+            Lib.assertNotReached("bad SocketMessage !");
+        }
+        socket.send(message);
+        return message;
+    }
+
+    public SocketMessage sendFin() {
+        return sendCmd(true, false, false);
+    }
+
+    public SocketMessage sendStp() {
+        return sendCmd(false, true, false);
+    }
+
+    public SocketMessage sendSyn() {
+        return sendCmd(false, false, true);
+    }
+
+
 }
 
 public class Socket {
