@@ -4,3 +4,4 @@ nachos-java/nachos/proj*/nachos
 *.o
 *.coff
 out
+nachos-java/nachos/bin/gcc-4.8.1
