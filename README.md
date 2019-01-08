@@ -20,7 +20,7 @@ nachos
 ```
 
 ## Test framework
-Add *testsuit* and *testcase* in Lib.java. 
+Add *testsuite* and *testcase* in Lib.java. 
 example:
 ``` java
         Lib.TestSuite ts = new Lib.TestSuite();
