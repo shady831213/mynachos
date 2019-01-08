@@ -63,4 +63,4 @@ How to build the tool chain refer to [this page](https://inst.eecs.berkeley.edu/
 *MemMap* is used for allocing page and maintain a *inverted page table*. The *inverted page table* is a *Page* type array indexed by ppn. *Page* can mapped to a specific *AddressMapping* implementation. All user process maintain an *AddressMapping* table indexed by vpn.
 
 ## About proj4
-Modified protocal described in [here](https://people.eecs.berkeley.edu/~kubitron/cs162/Nachos/net-proto/spec.html).The difference is closing handshakes which is implemented by 4-steps instead of 3-steps. And *State Pattern* is 
+Modified protocal described in [here](https://people.eecs.berkeley.edu/~kubitron/cs162/Nachos/net-proto/spec.html).The difference is closing handshakes which is implemented by 4-steps instead of 3-steps. And *State Pattern* is used to implement the protocal.
